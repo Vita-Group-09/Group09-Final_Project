@@ -1,4 +1,4 @@
-name: Terraform + Data Pipeline
+name: Terraform + Pipeline
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  deploy-and-run:
+  terraform:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,6 +21,10 @@ jobs:
       - name: Terraform Init
         run: terraform init
         working-directory: terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
 
       - name: Terraform Validate
         run: terraform validate
@@ -34,8 +38,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      # 🔥 NEW STEP: TRIGGER STEP FUNCTIONS
-      - name: Start Step Functions Pipeline
+      - name: Trigger Step Functions
         run: |
           aws stepfunctions start-execution \
             --state-machine-arn arn:aws:states:us-east-1:320524884137:stateMachine:airport-intelligence-etl-pipeline \
