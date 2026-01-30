@@ -1,4 +1,4 @@
-name: Connect GitHub to AWS
+name: Glue Deploy Pipeline
 
 on:
   push:
@@ -6,11 +6,11 @@ on:
       - main
 
 jobs:
-  aws-test:
+  glue-job:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repo
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Configure AWS Credentials
