@@ -3,7 +3,7 @@ name: Glue CI/CD Pipeline
 on:
   push:
     branches:
-      - main
+      - develop
 
 jobs:
   glue-deploy:
