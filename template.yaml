@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Final Glue Job CI/CD Template
+
+Parameters:
+  ScriptBucket:
+    Type: String
+  ScriptKey:
+    Type: String
+  JobName:
+    Type: String
+    Default: FinalGlue
+    Description: Name to give the Glue job (avoid spaces)
+
+Resources:
+  GlueJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+  FinalGlueJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: !Ref JobName
+      Role: !GetAtt GlueJobRole.Arn
+      GlueVersion: "4.0"
+      Command:
+        Name: glueetl
+        PythonVersion: "3"
+        ScriptLocation: !Sub s3://${ScriptBucket}/${ScriptKey}
+      DefaultArguments:
+        --job-language: python
+        --enable-continuous-cloudwatch-log: "true"
+        --enable-metrics: "true"
+      WorkerType: G.1X
+      NumberOfWorkers: 5
+      Timeout: 2880
+      MaxRetries: 1
+
+Outputs:
+  GlueJobName:
+    Description: Name of the Glue job
+    Value: !Ref FinalGlueJob
+    Export:
+      Name: !Sub "${AWS::StackName}-GlueJobName"
