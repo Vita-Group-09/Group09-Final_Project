@@ -1,0 +1,153 @@
+# Glue CI/CD Pipeline using GitHub Actions
+
+name: Glue CI/CD
+
+on:
+  push:
+    branches: [ "develop" ]
+
+  pull_request:
+    branches: [ "develop" ]
+
+  workflow_dispatch:
+
+
+jobs:
+
+  glue-deploy:
+
+    runs-on: ubuntu-latest
+
+    env:
+      S3_BUCKET: airport-airline-operations-analytics-platform
+      SCRIPT_NAME: glue_job.py
+      SCRIPT_S3_KEY: scripts/glue_job.py
+      STACK_NAME: glue-cicd-stack
+      GLUE_JOB: FinalGlue
+      LAMBDA_NAME: airline-and-airport
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # ---------- debug tree ----------
+      - name: Show repo files
+        run: ls -R
+
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+
+      # ---------- upload glue script ----------
+      - name: Upload Glue script to S3
+        run: |
+          if [ ! -f "$SCRIPT_NAME" ]; then
+            echo "Glue script not found at root"
+            exit 1
+          fi
+
+          aws s3 cp $SCRIPT_NAME s3://$S3_BUCKET/$SCRIPT_S3_KEY
+
+
+      # ---------- deploy stack ----------
+      - name: Deploy Glue Stack
+        run: |
+          aws cloudformation deploy \
+            --stack-name $STACK_NAME \
+            --template-file template.yaml \
+            --parameter-overrides \
+              ScriptBucket=$S3_BUCKET \
+              ScriptKey=$SCRIPT_S3_KEY \
+              JobName=$GLUE_JOB \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
+
+
+      # ---------- lambda deploy ----------
+      - name: Zip Lambda code
+        run: |
+          if [ ! -f "lambda_function.py" ]; then
+            echo "Lambda file not found"
+            exit 1
+          fi
+
+          zip lambda.zip lambda_function.py
+
+
+      - name: Update Lambda Function
+        run: |
+          aws lambda update-function-code \
+            --function-name $LAMBDA_NAME \
+            --zip-file fileb://lambda.zip
+
+
+      # ---------- start glue ----------
+      - name: Start Glue Job
+        id: start_job
+        run: |
+          JOB_RUN_ID=$(aws glue start-job-run \
+            --job-name $GLUE_JOB \
+            --query JobRunId \
+            --output text)
+
+          echo "JOB_RUN_ID=$JOB_RUN_ID" >> $GITHUB_ENV
+
+
+      # ---------- wait glue ----------
+      - name: Wait for Glue Job Completion
+        run: |
+          for i in {1..60}; do
+            STATUS=$(aws glue get-job-run \
+              --job-name $GLUE_JOB \
+              --run-id $JOB_RUN_ID \
+              --query JobRun.JobRunState \
+              --output text)
+
+            echo "Status: $STATUS"
+
+            if [ "$STATUS" = "SUCCEEDED" ]; then exit 0; fi
+            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "STOPPED" ]; then exit 1; fi
+
+            sleep 30
+          done
+
+          echo "Timeout"
+          exit 1
+
+
+      # ---------- crawlers ----------
+      - name: Run Airline Crawler
+        run: |
+          aws glue start-crawler --name airline || true
+          while true; do
+            S=$(aws glue get-crawler --name airline --query 'Crawler.State' --output text)
+            if [ "$S" = "READY" ]; then break; fi
+            sleep 20
+          done
+
+
+      - name: Run Customers Crawler
+        run: |
+          aws glue start-crawler --name customers || true
+          while true; do
+            S=$(aws glue get-crawler --name customers --query 'Crawler.State' --output text)
+            if [ "$S" = "READY" ]; then break; fi
+            sleep 20
+          done
+
+
+      - name: Pipeline Success
+        run: echo "Glue + Lambda + Crawlers completed"
