@@ -10,38 +10,52 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ---------------- CHECKOUT ----------------
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # ---------------- PYTHON ----------------
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.9"
 
+      # ---------------- DEBUG FILE LIST ----------------
+      - name: Show repo files
+        run: ls -R
+
+      # ---------------- AWS CREDS ----------------
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+          aws-region: ap-south-1
 
+      # ---------------- VERIFY FILE EXISTS ----------------
+      - name: Check Glue script exists
+        run: |
+          test -f glue_job.py || (echo "glue_job.py not found" && exit 1)
+
+      # ---------------- UPLOAD SCRIPT ----------------
       - name: Upload Glue script
         run: |
           aws s3 cp glue_job.py \
           s3://airport-airline-operations-analytics-platform/scripts/glue_job.py
 
+      # ---------------- CLOUDFORMATION DEPLOY ----------------
       - name: Deploy Glue Job Stack
         run: |
           aws cloudformation deploy \
             --stack-name glue-cicd-stack \
-            --template-file template.yaml \
+            --template-file Glue_Job_CFT.yaml \
             --parameter-overrides \
               ScriptBucket=airport-airline-operations-analytics-platform \
               ScriptKey=scripts/glue_job.py \
               JobName=FinalGlue \
             --capabilities CAPABILITY_NAMED_IAM
 
-      # ---------------- GLUE JOB ----------------
+      # ---------------- RUN GLUE JOB ----------------
       - name: Run Glue Job and Wait
         run: |
           JOB_RUN_ID=$(aws glue start-job-run \
@@ -127,5 +141,6 @@ jobs:
             exit 1
           fi
 
+      # ---------------- SUCCESS ----------------
       - name: Pipeline Success
-        run: echo "🎉 Glue Job + Airline DB + Customers DB updated successfully"
+        run: echo "Glue Job + Airline + Customers crawlers completed successfully"
