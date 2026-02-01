@@ -2,53 +2,47 @@
 
 name: Glue CI/CD
 
-# Controls when the workflow will run
 on:
-
-  # Trigger on push to develop branch
   push:
     branches: [ "develop" ]
 
-  # Trigger on PR to develop branch
   pull_request:
     branches: [ "develop" ]
 
-  # Allow manual trigger
   workflow_dispatch:
 
 
-# Jobs
 jobs:
 
   glue-deploy:
 
-    # Runner
     runs-on: ubuntu-latest
 
-    # Environment variables
     env:
       S3_BUCKET: airport-airline-operations-analytics-platform
-      SCRIPT_NAME: glue_job.py
+      SCRIPT_NAME: glue/glue_job.py
       SCRIPT_S3_KEY: scripts/glue_job.py
       STACK_NAME: glue-cicd-stack
       GLUE_JOB: FinalGlue
+      LAMBDA_NAME: airline-and-airport
 
-    # Steps
     steps:
 
-      # Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
 
-      # Setup python
+      # -------- debug (remove later) --------
+      - name: Show repo files
+        run: ls -R
+
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.9"
 
 
-      # Configure AWS
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -57,18 +51,18 @@ jobs:
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
 
-      # Upload Glue script
+      # -------- upload glue script --------
       - name: Upload Glue script to S3
         run: |
           if [ ! -f "$SCRIPT_NAME" ]; then
-            echo "Glue script not found"
+            echo "Glue script not found at $SCRIPT_NAME"
             exit 1
           fi
 
           aws s3 cp $SCRIPT_NAME s3://$S3_BUCKET/$SCRIPT_S3_KEY
 
 
-      # Deploy CloudFormation
+      # -------- deploy CFN --------
       - name: Deploy Glue Stack
         run: |
           aws cloudformation deploy \
@@ -82,7 +76,27 @@ jobs:
             --no-fail-on-empty-changeset
 
 
-      # Start Glue job
+      # -------- deploy lambda --------
+      - name: Zip Lambda code
+        run: |
+          if [ ! -f "lambda/lambda_function.py" ]; then
+            echo "Lambda file missing"
+            exit 1
+          fi
+
+          cd lambda
+          zip -r lambda.zip lambda_function.py
+          mv lambda.zip ../lambda.zip
+
+
+      - name: Update Lambda Function
+        run: |
+          aws lambda update-function-code \
+            --function-name $LAMBDA_NAME \
+            --zip-file fileb://lambda.zip
+
+
+      # -------- start glue job --------
       - name: Start Glue Job
         id: start_job
         run: |
@@ -95,11 +109,10 @@ jobs:
           echo "Started job: $JOB_RUN_ID"
 
 
-      # Wait for Glue job
+      # -------- wait glue --------
       - name: Wait for Glue Job Completion
         run: |
           for i in {1..60}; do
-
             STATUS=$(aws glue get-job-run \
               --job-name $GLUE_JOB \
               --run-id $JOB_RUN_ID \
@@ -108,45 +121,36 @@ jobs:
 
             echo "Status: $STATUS"
 
-            if [ "$STATUS" = "SUCCEEDED" ]; then
-              exit 0
-            fi
-
-            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "STOPPED" ]; then
-              exit 1
-            fi
+            if [ "$STATUS" = "SUCCEEDED" ]; then exit 0; fi
+            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "STOPPED" ]; then exit 1; fi
 
             sleep 30
           done
 
-          echo "Glue job timeout"
+          echo "Timeout"
           exit 1
 
 
-      # Run Airline crawler
+      # -------- crawlers --------
       - name: Run Airline Crawler
         run: |
           aws glue start-crawler --name airline || true
-
           while true; do
-            STATE=$(aws glue get-crawler --name airline --query 'Crawler.State' --output text)
-            if [ "$STATE" = "READY" ]; then break; fi
+            S=$(aws glue get-crawler --name airline --query 'Crawler.State' --output text)
+            if [ "$S" = "READY" ]; then break; fi
             sleep 20
           done
 
 
-      # Run Customers crawler
       - name: Run Customers Crawler
         run: |
           aws glue start-crawler --name customers || true
-
           while true; do
-            STATE=$(aws glue get-crawler --name customers --query 'Crawler.State' --output text)
-            if [ "$STATE" = "READY" ]; then break; fi
+            S=$(aws glue get-crawler --name customers --query 'Crawler.State' --output text)
+            if [ "$S" = "READY" ]; then break; fi
             sleep 20
           done
 
 
-      # Final success step
       - name: Pipeline Success
-        run: echo "Glue pipeline completed successfully"
+        run: echo "Glue + Lambda + Crawlers completed"
