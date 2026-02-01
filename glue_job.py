@@ -82,7 +82,6 @@ carrier_lkp = spark.read.option("header", True) \
         col("Airline Name").alias("carrier_full_name")
     )
 
-# ==================================================
 # ================= PIPELINE 1 =====================
 # SILVER – AIRLINE (ROUTE + HOUR)
 # ==================================================
@@ -133,7 +132,6 @@ airline_silver.write \
     .mode("overwrite") \
     .parquet("s3://airport-airline-operations-analytics-platform/silver/airline/")
 
-# ==================================================
 # ================= PIPELINE 2 =====================
 # SILVER – CUSTOMERS (MONTHLY)
 # ==================================================
@@ -171,7 +169,7 @@ customers_silver.write \
     .mode("overwrite") \
     .parquet("s3://airport-airline-operations-analytics-platform/silver/customers/")
 
-# ==================================================
+
 # ================= PIPELINE 3 =====================
 # GOLD – OPERATIONAL HEALTH
 # ==================================================
