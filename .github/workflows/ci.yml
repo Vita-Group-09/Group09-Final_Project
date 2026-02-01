@@ -20,7 +20,7 @@ jobs:
 
     env:
       S3_BUCKET: airport-airline-operations-analytics-platform
-      SCRIPT_NAME: glue/glue_job.py
+      SCRIPT_NAME: glue_job.py
       SCRIPT_S3_KEY: scripts/glue_job.py
       STACK_NAME: glue-cicd-stack
       GLUE_JOB: FinalGlue
@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
 
 
-      # -------- debug (remove later) --------
+      # ---------- debug tree ----------
       - name: Show repo files
         run: ls -R
 
@@ -51,18 +51,18 @@ jobs:
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
 
-      # -------- upload glue script --------
+      # ---------- upload glue script ----------
       - name: Upload Glue script to S3
         run: |
           if [ ! -f "$SCRIPT_NAME" ]; then
-            echo "Glue script not found at $SCRIPT_NAME"
+            echo "Glue script not found at root"
             exit 1
           fi
 
           aws s3 cp $SCRIPT_NAME s3://$S3_BUCKET/$SCRIPT_S3_KEY
 
 
-      # -------- deploy CFN --------
+      # ---------- deploy stack ----------
       - name: Deploy Glue Stack
         run: |
           aws cloudformation deploy \
@@ -76,17 +76,15 @@ jobs:
             --no-fail-on-empty-changeset
 
 
-      # -------- deploy lambda --------
+      # ---------- lambda deploy ----------
       - name: Zip Lambda code
         run: |
-          if [ ! -f "lambda/lambda_function.py" ]; then
-            echo "Lambda file missing"
+          if [ ! -f "lambda_function.py" ]; then
+            echo "Lambda file not found"
             exit 1
           fi
 
-          cd lambda
-          zip -r lambda.zip lambda_function.py
-          mv lambda.zip ../lambda.zip
+          zip lambda.zip lambda_function.py
 
 
       - name: Update Lambda Function
@@ -96,7 +94,7 @@ jobs:
             --zip-file fileb://lambda.zip
 
 
-      # -------- start glue job --------
+      # ---------- start glue ----------
       - name: Start Glue Job
         id: start_job
         run: |
@@ -106,10 +104,9 @@ jobs:
             --output text)
 
           echo "JOB_RUN_ID=$JOB_RUN_ID" >> $GITHUB_ENV
-          echo "Started job: $JOB_RUN_ID"
 
 
-      # -------- wait glue --------
+      # ---------- wait glue ----------
       - name: Wait for Glue Job Completion
         run: |
           for i in {1..60}; do
@@ -131,7 +128,7 @@ jobs:
           exit 1
 
 
-      # -------- crawlers --------
+      # ---------- crawlers ----------
       - name: Run Airline Crawler
         run: |
           aws glue start-crawler --name airline || true
