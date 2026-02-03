@@ -1,5 +1,4 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Glue CI/CD Stack
 
 Parameters:
   ScriptBucket:
@@ -11,7 +10,7 @@ Parameters:
 
 Resources:
 
-  GlueServiceRole:
+  GlueRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: glue-cicd-role
@@ -27,13 +26,12 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
 
       Policies:
-        - PolicyName: GlueS3Access
+        - PolicyName: S3Full
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
-                Action:
-                  - s3:*
+                Action: s3:*
                 Resource: "*"
 
 
@@ -41,18 +39,14 @@ Resources:
     Type: AWS::Glue::Job
     Properties:
       Name: !Ref JobName
-      Role: !GetAtt GlueServiceRole.Arn
+      Role: !GetAtt GlueRole.Arn
 
       Command:
         Name: glueetl
-        ScriptLocation: !Sub s3://${ScriptBucket}/${ScriptKey}
         PythonVersion: 3
+        ScriptLocation: !Sub s3://${ScriptBucket}/${ScriptKey}
 
       GlueVersion: "4.0"
       WorkerType: G.1X
       NumberOfWorkers: 2
       Timeout: 60
-
-Outputs:
-  GlueJobName:
-    Value: !Ref GlueJob
