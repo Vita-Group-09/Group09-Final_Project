@@ -1,14 +1,13 @@
-AWSTemplateFormatVersion: "2010-09-09"
-Description: Glue Crawlers Stack (Silver Layer)
+AWSTemplateFormatVersion: '2010-09-09'
 
 Resources:
 
-  GlueCrawlerRole:
+  CrawlerRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: glue-crawler-role
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
@@ -16,32 +15,23 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
-        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
 
   AirlineCrawler:
     Type: AWS::Glue::Crawler
     Properties:
       Name: airline
-      Role: !GetAtt GlueCrawlerRole.Arn
-      DatabaseName: analytics_db
-      TablePrefix: airline_
+      Role: !GetAtt CrawlerRole.Arn
+      DatabaseName: airline
       Targets:
         S3Targets:
           - Path: s3://airport-airline-operations-analytics-platform/silver/airline/
-      SchemaChangePolicy:
-        UpdateBehavior: UPDATE_IN_DATABASE
-        DeleteBehavior: DEPRECATE_IN_DATABASE
 
   CustomersCrawler:
     Type: AWS::Glue::Crawler
     Properties:
       Name: customers
-      Role: !GetAtt GlueCrawlerRole.Arn
-      DatabaseName: analytics_db
-      TablePrefix: customers_
+      Role: !GetAtt CrawlerRole.Arn
+      DatabaseName: customers
       Targets:
         S3Targets:
           - Path: s3://airport-airline-operations-analytics-platform/silver/customers/
-      SchemaChangePolicy:
-        UpdateBehavior: UPDATE_IN_DATABASE
-        DeleteBehavior: DEPRECATE_IN_DATABASE
