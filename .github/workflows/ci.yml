@@ -2,102 +2,139 @@ name: Glue CI/CD
 
 on:
   push:
-    branches: [ "develop" ]
+    branches:
+      - main
+      - develop
+
+  pull_request:
+    branches:
+      - main
+      - develop
+
   workflow_dispatch:
 
 jobs:
-  glue-deploy:
+  glue:
     runs-on: ubuntu-latest
 
     env:
-      S3_BUCKET: airport-airline-operations-analytics-platform
-      SCRIPT_NAME: glue_job.py
-      SCRIPT_S3_KEY: scripts/glue_job.py
-      STACK_NAME: glue-cicd-stack
-      GLUE_JOB: FinalGlue
+      BUCKET: airport-airline-operations-analytics-platform
+      SCRIPT: glue_job.py
+      KEY: scripts/glue_job.py
+      STACK: glue-cicd-stack
+      JOB: FinalGlue
 
     steps:
 
+      # -------------------
+      # Checkout
+      # -------------------
       - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.9"
+      - name: Show files
+        run: ls -R
 
-      - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v4
+
+      # -------------------
+      # AWS Login
+      # -------------------
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-      # ----------------
-      # Upload script
-      # ----------------
+
+      # -------------------
+      # Upload Glue script FIRST
+      # -------------------
       - name: Upload Glue Script
         run: |
-          aws s3 cp $SCRIPT_NAME s3://$S3_BUCKET/$SCRIPT_S3_KEY
+          test -f $SCRIPT || (echo "❌ glue_job.py missing" && exit 1)
+          aws s3 cp $SCRIPT s3://$BUCKET/$KEY
 
-      # ----------------
-      # Deploy stack
-      # ----------------
-      - name: Deploy Stack
+      - name: Verify S3 Script
+        run: aws s3 ls s3://$BUCKET/$KEY
+
+
+      # -------------------
+      # Deploy / Update Stack
+      # -------------------
+      - name: Deploy CloudFormation
         run: |
+          test -f template.yaml || (echo "❌ template.yaml missing" && exit 1)
+
           aws cloudformation deploy \
-            --stack-name $STACK_NAME \
+            --stack-name $STACK \
             --template-file template.yaml \
             --parameter-overrides \
-              ScriptBucket=$S3_BUCKET \
-              ScriptKey=$SCRIPT_S3_KEY \
-              JobName=$GLUE_JOB \
-            --capabilities CAPABILITY_NAMED_IAM
+              ScriptBucket=$BUCKET \
+              ScriptKey=$KEY \
+              JobName=$JOB \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
 
-      # ----------------
-      # Verify job exists
-      # ----------------
-      - name: Wait for Glue Job Creation
+
+      # -------------------
+      # Wait until Glue job exists
+      # -------------------
+      - name: Wait for Glue Job
         run: |
           for i in {1..20}; do
-            if aws glue get-job --job-name $GLUE_JOB; then
-              echo "Glue job ready"
+            if aws glue get-job --job-name $JOB >/dev/null 2>&1; then
+              echo "✅ Job exists"
               exit 0
             fi
-            echo "Waiting for Glue job..."
+            echo "Waiting for job..."
             sleep 15
           done
-          echo "Glue job not created"
+          echo "❌ Job not created"
           exit 1
 
-      # ----------------
-      # Start job
-      # ----------------
-      - name: Start Glue Job
+
+      # -------------------
+      # Force metadata refresh (fix missing metadata error)
+      # -------------------
+      - name: Refresh Job Metadata
         run: |
-          JOB_RUN_ID=$(aws glue start-job-run \
-            --job-name $GLUE_JOB \
+          aws glue update-job \
+            --job-name $JOB \
+            --job-update "Command={Name=glueetl,ScriptLocation=s3://$BUCKET/$KEY,PythonVersion=3}"
+
+
+      # -------------------
+      # Start Glue Job
+      # -------------------
+      - name: Start Job
+        run: |
+          ID=$(aws glue start-job-run \
+            --job-name $JOB \
             --query JobRunId \
             --output text)
 
-          echo "JOB_RUN_ID=$JOB_RUN_ID" >> $GITHUB_ENV
+          echo "RUN_ID=$ID" >> $GITHUB_ENV
+          echo "Started: $ID"
 
-      # ----------------
-      # Wait for finish
-      # ----------------
+
+      # -------------------
+      # Wait for completion
+      # -------------------
       - name: Wait for Completion
         run: |
-          for i in {1..60}; do
-            STATUS=$(aws glue get-job-run \
-              --job-name $GLUE_JOB \
-              --run-id $JOB_RUN_ID \
+          for i in {1..40}; do
+            S=$(aws glue get-job-run \
+              --job-name $JOB \
+              --run-id $RUN_ID \
               --query JobRun.JobRunState \
               --output text)
 
-            echo "Status: $STATUS"
+            echo "Status: $S"
 
-            if [ "$STATUS" = "SUCCEEDED" ]; then exit 0; fi
-            if [ "$STATUS" = "FAILED" ]; then exit 1; fi
+            if [ "$S" = "SUCCEEDED" ]; then exit 0; fi
+            if [ "$S" = "FAILED" ] || [ "$S" = "STOPPED" ]; then exit 1; fi
 
             sleep 30
           done
+
+          echo "Timeout"
           exit 1
