@@ -1,26 +1,14 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Glue Crawlers Stack (Silver Layer)
 
 Resources:
 
-  DBAirline:
-    Type: AWS::Glue::Database
-    Properties:
-      CatalogId: !Ref AWS::AccountId
-      DatabaseInput:
-        Name: airline_cicd
-
-  DBCustomers:
-    Type: AWS::Glue::Database
-    Properties:
-      CatalogId: !Ref AWS::AccountId
-      DatabaseInput:
-        Name: customers_cicd
-
-  Role:
+  GlueCrawlerRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: glue-crawler-role
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
@@ -28,23 +16,32 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
 
-  Crawler1:
+  AirlineCrawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: airline-cicd
-      Role: !GetAtt Role.Arn
-      DatabaseName: airline_cicd
+      Name: airline
+      Role: !GetAtt GlueCrawlerRole.Arn
+      DatabaseName: analytics_db
+      TablePrefix: airline_
       Targets:
         S3Targets:
           - Path: s3://airport-airline-operations-analytics-platform/silver/airline/
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: DEPRECATE_IN_DATABASE
 
-  Crawler2:
+  CustomersCrawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: customers-cicd
-      Role: !GetAtt Role.Arn
-      DatabaseName: customers_cicd
+      Name: customers
+      Role: !GetAtt GlueCrawlerRole.Arn
+      DatabaseName: analytics_db
+      TablePrefix: customers_
       Targets:
         S3Targets:
           - Path: s3://airport-airline-operations-analytics-platform/silver/customers/
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: DEPRECATE_IN_DATABASE
