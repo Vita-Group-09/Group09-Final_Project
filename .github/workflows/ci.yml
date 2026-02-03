@@ -1,153 +1,179 @@
-# Glue CI/CD Pipeline using GitHub Actions
-
 name: Glue CI/CD
 
 on:
   push:
-    branches: [ "develop" ]
+    branches:
+      - main
+      - develop
 
   pull_request:
-    branches: [ "develop" ]
+    branches:
+      - main
+      - develop
 
   workflow_dispatch:
 
-
 jobs:
-
-  glue-deploy:
-
+  glue:
     runs-on: ubuntu-latest
 
     env:
-      S3_BUCKET: airport-airline-operations-analytics-platform
-      SCRIPT_NAME: glue_job.py
-      SCRIPT_S3_KEY: scripts/glue_job.py
-      STACK_NAME: glue-cicd-stack
-      GLUE_JOB: FinalGlue
-      LAMBDA_NAME: airline-and-airport
+      BUCKET: airport-airline-operations-analytics-platform
+      SCRIPT: glue_job.py
+      KEY: scripts/glue_job.py
+      STACK: glue-cicd-stack
+      JOB: FinalGlue
+      CRAWLER1: airline
+      CRAWLER2: customers
 
     steps:
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      # -------------------
+      # Checkout
+      # -------------------
+      - uses: actions/checkout@v4
+
+      - run: ls -R
 
 
-      # ---------- debug tree ----------
-      - name: Show repo files
-        run: ls -R
-
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.9"
-
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      # -------------------
+      # AWS Login
+      # -------------------
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
 
-      # ---------- upload glue script ----------
-      - name: Upload Glue script to S3
+      # -------------------
+      # Upload Script
+      # -------------------
+      - name: Upload Glue Script
         run: |
-          if [ ! -f "$SCRIPT_NAME" ]; then
-            echo "Glue script not found at root"
-            exit 1
-          fi
+          test -f $SCRIPT || (echo "glue_job.py missing" && exit 1)
+          aws s3 cp $SCRIPT s3://$BUCKET/$KEY
 
-          aws s3 cp $SCRIPT_NAME s3://$S3_BUCKET/$SCRIPT_S3_KEY
+      - run: aws s3 ls s3://$BUCKET/$KEY
 
 
-      # ---------- deploy stack ----------
-      - name: Deploy Glue Stack
+      # -------------------
+      # Deploy Stack
+      # -------------------
+      - name: Deploy CFN
         run: |
+          test -f template.yaml || (echo "template.yaml missing" && exit 1)
+
           aws cloudformation deploy \
-            --stack-name $STACK_NAME \
+            --stack-name $STACK \
             --template-file template.yaml \
             --parameter-overrides \
-              ScriptBucket=$S3_BUCKET \
-              ScriptKey=$SCRIPT_S3_KEY \
-              JobName=$GLUE_JOB \
+              ScriptBucket=$BUCKET \
+              ScriptKey=$KEY \
+              JobName=$JOB \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset
 
 
-      # ---------- lambda deploy ----------
-      - name: Zip Lambda code
+      # -------------------
+      # Wait Job Exists
+      # -------------------
+      - name: Wait for Glue Job
         run: |
-          if [ ! -f "lambda_function.py" ]; then
-            echo "Lambda file not found"
-            exit 1
-          fi
+          for i in {1..20}; do
+            if aws glue get-job --job-name $JOB >/dev/null 2>&1; then
+              echo "Job ready"
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1
 
-          zip lambda.zip lambda_function.py
 
-
-      - name: Update Lambda Function
+      # -------------------
+      # Refresh Metadata
+      # -------------------
+      - name: Refresh Job Metadata
         run: |
-          aws lambda update-function-code \
-            --function-name $LAMBDA_NAME \
-            --zip-file fileb://lambda.zip
+          aws glue update-job \
+            --job-name $JOB \
+            --job-update "Command={Name=glueetl,ScriptLocation=s3://$BUCKET/$KEY,PythonVersion=3}"
 
 
-      # ---------- start glue ----------
+      # -------------------
+      # Start Glue
+      # -------------------
       - name: Start Glue Job
-        id: start_job
         run: |
-          JOB_RUN_ID=$(aws glue start-job-run \
-            --job-name $GLUE_JOB \
+          ID=$(aws glue start-job-run \
+            --job-name $JOB \
             --query JobRunId \
             --output text)
 
-          echo "JOB_RUN_ID=$JOB_RUN_ID" >> $GITHUB_ENV
+          echo "RUN_ID=$ID" >> $GITHUB_ENV
 
 
-      # ---------- wait glue ----------
-      - name: Wait for Glue Job Completion
+      # -------------------
+      # Wait Glue Complete
+      # -------------------
+      - name: Wait Glue
         run: |
-          for i in {1..60}; do
-            STATUS=$(aws glue get-job-run \
-              --job-name $GLUE_JOB \
-              --run-id $JOB_RUN_ID \
+          for i in {1..40}; do
+            S=$(aws glue get-job-run \
+              --job-name $JOB \
+              --run-id $RUN_ID \
               --query JobRun.JobRunState \
               --output text)
 
-            echo "Status: $STATUS"
+            echo "Glue status: $S"
 
-            if [ "$STATUS" = "SUCCEEDED" ]; then exit 0; fi
-            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "STOPPED" ]; then exit 1; fi
+            if [ "$S" = "SUCCEEDED" ]; then break; fi
+            if [ "$S" = "FAILED" ] || [ "$S" = "STOPPED" ]; then exit 1; fi
 
             sleep 30
           done
 
-          echo "Timeout"
-          exit 1
 
-
-      # ---------- crawlers ----------
+      # -------------------
+      # Run Crawler 1
+      # -------------------
       - name: Run Airline Crawler
         run: |
-          aws glue start-crawler --name airline || true
+          aws glue start-crawler --name $CRAWLER1 || true
+
           while true; do
-            S=$(aws glue get-crawler --name airline --query 'Crawler.State' --output text)
+            S=$(aws glue get-crawler \
+              --name $CRAWLER1 \
+              --query 'Crawler.State' \
+              --output text)
+
+            echo "Crawler airline: $S"
             if [ "$S" = "READY" ]; then break; fi
             sleep 20
           done
 
 
+      # -------------------
+      # Run Crawler 2
+      # -------------------
       - name: Run Customers Crawler
         run: |
-          aws glue start-crawler --name customers || true
+          aws glue start-crawler --name $CRAWLER2 || true
+
           while true; do
-            S=$(aws glue get-crawler --name customers --query 'Crawler.State' --output text)
+            S=$(aws glue get-crawler \
+              --name $CRAWLER2 \
+              --query 'Crawler.State' \
+              --output text)
+
+            echo "Crawler customers: $S"
             if [ "$S" = "READY" ]; then break; fi
             sleep 20
           done
 
 
-      - name: Pipeline Success
-        run: echo "Glue + Lambda + Crawlers completed"
+      # -------------------
+      # Done
+      # -------------------
+      - name: Success
+        run: echo "Glue + Crawlers completed"
