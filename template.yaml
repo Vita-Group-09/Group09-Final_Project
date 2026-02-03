@@ -26,7 +26,7 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
 
       Policies:
-        - PolicyName: S3Full
+        - PolicyName: S3Access
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -43,8 +43,8 @@ Resources:
 
       Command:
         Name: glueetl
-        PythonVersion: 3
         ScriptLocation: !Sub s3://${ScriptBucket}/${ScriptKey}
+        PythonVersion: 3
 
       GlueVersion: "4.0"
       WorkerType: G.1X
