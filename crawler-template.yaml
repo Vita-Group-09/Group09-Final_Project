@@ -2,10 +2,23 @@ AWSTemplateFormatVersion: '2010-09-09'
 
 Resources:
 
+  GlueDBAirline:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: airline
+
+  GlueDBCustomers:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: customers
+
   CrawlerRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: glue-crawler-role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
