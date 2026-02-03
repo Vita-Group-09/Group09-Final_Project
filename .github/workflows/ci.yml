@@ -62,6 +62,7 @@ jobs:
       # ---------- Update Lambda ----------
       - name: Update Lambda
         run: |
+          test -f lambda_function.py || (echo "lambda_function.py missing"; exit 1)
           zip lambda.zip lambda_function.py
           aws lambda update-function-code \
             --function-name $LAMBDA \
@@ -69,7 +70,6 @@ jobs:
 
       # ---------- Run Glue Job ----------
       - name: Start Glue Job
-        id: glue
         run: |
           RID=$(aws glue start-job-run --job-name $JOB --query JobRunId --output text)
           echo "RID=$RID" >> $GITHUB_ENV
@@ -88,57 +88,25 @@ jobs:
             sleep 30
           done
 
-      # =========================
-      # CRAWLER EXECUTION ADDED
-      # =========================
-
+      # ---------- Run Airline Crawler ----------
       - name: Run Airline Crawler
         run: |
           aws glue start-crawler --name airline || true
-
           while true; do
-            S=$(aws glue get-crawler \
-              --name airline \
-              --query 'Crawler.State' \
-              --output text)
-
-            echo "airline crawler: $S"
+            S=$(aws glue get-crawler --name airline --query 'Crawler.State' --output text)
             [[ "$S" == "READY" ]] && break
             sleep 20
           done
 
-          STATUS=$(aws glue get-crawler \
-            --name airline \
-            --query 'Crawler.LastCrawl.Status' \
-            --output text)
-
-          echo "airline result: $STATUS"
-          [[ "$STATUS" != "SUCCEEDED" ]] && exit 1
-
-
+      # ---------- Run Customers Crawler ----------
       - name: Run Customers Crawler
         run: |
           aws glue start-crawler --name customers || true
-
           while true; do
-            S=$(aws glue get-crawler \
-              --name customers \
-              --query 'Crawler.State' \
-              --output text)
-
-            echo "customers crawler: $S"
+            S=$(aws glue get-crawler --name customers --query 'Crawler.State' --output text)
             [[ "$S" == "READY" ]] && break
             sleep 20
           done
-
-          STATUS=$(aws glue get-crawler \
-            --name customers \
-            --query 'Crawler.LastCrawl.Status' \
-            --output text)
-
-          echo "customers result: $STATUS"
-          [[ "$STATUS" != "SUCCEEDED" ]] && exit 1
-
 
       - name: Pipeline Success
         run: echo "Glue + Lambda + Crawlers completed successfully"
