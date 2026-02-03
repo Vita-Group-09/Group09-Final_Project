@@ -3,7 +3,6 @@ name: Glue CI/CD
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
 
 jobs:
   deploy:
