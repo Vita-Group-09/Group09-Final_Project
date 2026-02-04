@@ -3,7 +3,7 @@ resource "aws_sfn_state_machine" "airport_pipeline" {
   role_arn = aws_iam_role.step_functions_role.arn
 
   definition = jsonencode({
-    Comment = "Airport Intelligence Glue ETL Pipeline"
+    Comment = "Airport Intelligence Glue ETL Pipeline (Incremental, No Congestion)"
     StartAt = "ETL_Customers"
     States = {
 
@@ -12,15 +12,6 @@ resource "aws_sfn_state_machine" "airport_pipeline" {
         Resource = "arn:aws:states:::glue:startJobRun.sync"
         Parameters = {
           JobName = "ETL_Customers_v2"
-        }
-        Next = "ETL_Congestion"
-      }
-
-      ETL_Congestion = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::glue:startJobRun.sync"
-        Parameters = {
-          JobName = "ETL_CongestionScore_v2"
         }
         Next = "ETL_Operational_Health"
       }
@@ -46,20 +37,6 @@ resource "aws_sfn_state_machine" "airport_pipeline" {
                 Resource = "arn:aws:states:::aws-sdk:glue:startCrawler"
                 Parameters = {
                   Name = "Customers_table_crawler_v2"
-                }
-                End = true
-              }
-            }
-          },
-
-          {
-            StartAt = "Congestion_Crawler"
-            States = {
-              Congestion_Crawler = {
-                Type     = "Task"
-                Resource = "arn:aws:states:::aws-sdk:glue:startCrawler"
-                Parameters = {
-                  Name = "CongestionScore_Crawler_v2"
                 }
                 End = true
               }

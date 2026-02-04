@@ -13,21 +13,6 @@ resource "aws_glue_crawler" "customers" {
   }
 }
 
-resource "aws_glue_crawler" "congestion" {
-  name          = "CongestionScore_Crawler_v2"
-  role          = var.glue_role_arn
-  database_name = var.glue_database
-
-  s3_target {
-    path = "s3://${var.curated_bucket}/transformed/departure_congestion/"
-  }
-
-  schema_change_policy {
-    delete_behavior = "LOG"
-    update_behavior = "UPDATE_IN_DATABASE"
-  }
-}
-
 resource "aws_glue_crawler" "kpi_2" {
   name          = "Kpi_2_Crawler_v2"
   role          = var.glue_role_arn

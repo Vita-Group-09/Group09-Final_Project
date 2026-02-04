@@ -1,3 +1,7 @@
+data "aws_s3_bucket" "raw" {
+  bucket = var.raw_bucket_name
+}
+
 module "curated_s3" {
   source      = "./modules/s3"
   bucket_name = var.curated_bucket_name
@@ -28,19 +32,31 @@ module "glue_crawlers" {
   glue_role_arn  = module.glue_iam_role.glue_role_arn
 }
 
-# 🔥 NEW: STEP FUNCTIONS ORCHESTRATION (NO EVENTBRIDGE)
+# 🔥 STEP FUNCTIONS ORCHESTRATION (CLEAN, NO CONGESTION)
 module "orchestration" {
   source = "./modules/orchestration"
+}
+module "lambda_trigger" {
+  source            = "./modules/lambda_trigger"
+  step_function_arn = module.orchestration.state_machine_arn
+}
 
-  glue_jobs = [
-    "ETL_Customers_v2",
-    "ETL_CongestionScore_v2",
-    "Kpi_2_v2"
-  ]
+resource "aws_lambda_permission" "allow_raw_s3" {
+  statement_id  = "AllowRawS3Invoke"
+  action        = "lambda:InvokeFunction"
+  function_name = module.lambda_trigger.lambda_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = data.aws_s3_bucket.raw.arn
+}
 
-  glue_crawlers = [
-    "Customers_table_crawler_v2",
-    "CongestionScore_Crawler_v2",
-    "Kpi_2_Crawler_v2"
-  ]
+resource "aws_s3_bucket_notification" "raw_trigger" {
+  bucket = data.aws_s3_bucket.raw.id
+
+  lambda_function {
+    lambda_function_arn = module.lambda_trigger.lambda_arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = "raw/"
+  }
+
+  depends_on = [aws_lambda_permission.allow_raw_s3]
 }

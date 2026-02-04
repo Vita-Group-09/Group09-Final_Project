@@ -17,32 +17,11 @@ resource "aws_glue_job" "etl_customers" {
   default_arguments = {
     "--RAW_BUCKET"    = var.raw_bucket
     "--OUTPUT_BUCKET" = var.curated_bucket
-    "--job-language"  = "python"
-    "--enable-continuous-cloudwatch-log" = "true"
-    "--enable-metrics" = ""
-  }
-}
 
-resource "aws_glue_job" "etl_congestion" {
-  name     = "ETL_CongestionScore_v2"
-  role_arn = var.glue_role_arn
+    # ✅ INCREMENTAL ENABLED
+    "--job-bookmark-option" = "job-bookmark-enable"
 
-  timeout = 120
-
-  command {
-    name            = "glueetl"
-    script_location = "s3://${var.curated_bucket}/scripts/etl_congestion_score.py"
-    python_version  = "3"
-  }
-
-  glue_version      = "4.0"
-  worker_type       = "G.1X"
-  number_of_workers = 5
-
-  default_arguments = {
-    "--RAW_BUCKET"    = var.raw_bucket
-    "--OUTPUT_BUCKET" = var.curated_bucket
-    "--job-language"  = "python"
+    "--job-language" = "python"
     "--enable-continuous-cloudwatch-log" = "true"
     "--enable-metrics" = ""
   }
@@ -67,7 +46,11 @@ resource "aws_glue_job" "etl_operational_health" {
   default_arguments = {
     "--RAW_BUCKET"    = var.raw_bucket
     "--OUTPUT_BUCKET" = var.curated_bucket
-    "--job-language"  = "python"
+
+    # ✅ INCREMENTAL ENABLED
+    "--job-bookmark-option" = "job-bookmark-enable"
+
+    "--job-language" = "python"
     "--enable-continuous-cloudwatch-log" = "true"
     "--enable-metrics" = ""
   }
