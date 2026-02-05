@@ -1,53 +1,48 @@
-name: Terraform Infra + Auto Pipeline
+name: Terraform Infra + Auto Pipeline (Terraform-Automation)
 
 on:
   push:
     branches:
-      - main   # when you push to main
+      - Terraform-Automation
 
 jobs:
   terraform:
     runs-on: ubuntu-latest
+    environment: terraform-automation
 
     defaults:
       run:
         shell: bash
 
     steps:
-      # 1️⃣ Checkout Repo
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Terraform
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.6.6
 
-      # 3️⃣ Terraform Init
       - name: Terraform Init
         working-directory: terraform
         run: terraform init
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
 
-      # 4️⃣ Terraform Validate
       - name: Terraform Validate
         working-directory: terraform
         run: terraform validate
 
-      # 5️⃣ Terraform Apply
       - name: Terraform Apply
         working-directory: terraform
         run: terraform apply -auto-approve
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
 
-      # 6️⃣ Trigger Step Functions
       - name: Trigger Step Function (Auto)
         run: |
           aws stepfunctions start-execution \
@@ -56,4 +51,4 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
