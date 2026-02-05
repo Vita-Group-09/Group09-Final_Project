@@ -1,108 +1,91 @@
 import json
 import time
 import boto3
+import os
 
-cf = boto3.client("cloudformation")
 glue = boto3.client("glue")
 
-GLUE_STACK = "glue-cicd-stack"
-CRAWLER_STACK = "glue-crawler-stack"
+GLUE_JOB = os.environ.get("GLUE_JOB_NAME", "FinalGlue")
+CRAWLERS = os.environ.get("CRAWLER_NAMES", "airline,customers").split(",")
 
-GLUE_JOB_NAME = "FinalGlue"
 
-def wait_stack(stack):
+# ================================
+# Wait for Glue Job
+# ================================
+def wait_for_glue(job_name, run_id):
     while True:
-        s = cf.describe_stacks(StackName=stack)["Stacks"][0]["StackStatus"]
-        print(f"Stack {stack}: {s}")
+        res = glue.get_job_run(
+            JobName=job_name,
+            RunId=run_id
+        )
 
-        if s.endswith("_COMPLETE"):
-            return
+        state = res["JobRun"]["JobRunState"]
+        print(f"Glue state = {state}")
 
-        if "FAILED" in s or "ROLLBACK" in s:
-            raise Exception(f"Stack failed: {s}")
+        if state == "SUCCEEDED":
+            return True
 
-        time.sleep(15)
-
-
-def wait_glue(job, run_id):
-    while True:
-        r = glue.get_job_run(JobName=job, RunId=run_id)
-        s = r["JobRun"]["JobRunState"]
-        print("Glue:", s)
-
-        if s == "SUCCEEDED":
-            return
-
-        if s in ["FAILED","STOPPED","TIMEOUT"]:
-            raise Exception("Glue failed")
+        if state in ["FAILED", "STOPPED", "TIMEOUT"]:
+            raise Exception(f"Glue failed: {state}")
 
         time.sleep(30)
 
 
-def wait_crawler(name):
+# ================================
+# Run crawler safely
+# ================================
+def run_crawler(name):
+    try:
+        glue.start_crawler(Name=name)
+        print(f"Started crawler {name}")
+    except glue.exceptions.CrawlerRunningException:
+        print(f"{name} already running")
+
     while True:
         s = glue.get_crawler(Name=name)["Crawler"]["State"]
-        print(name, s)
+        print(f"{name} state = {s}")
         if s == "READY":
-            return
+            break
         time.sleep(20)
 
 
+# ================================
+# Lambda handler
+# ================================
 def lambda_handler(event, context):
 
-    print("Triggered by S3")
+    print("Event received:")
     print(json.dumps(event))
 
-    # ==============================
-    # Deploy / Update Glue CFT
-    # ==============================
-    cf.deploy_stack = cf.create_stack  # safe alias if needed
-
+    # ---- basic S3 filter guard ----
     try:
-        cf.update_stack(
-            StackName=GLUE_STACK,
-            UsePreviousTemplate=True,
-            Capabilities=['CAPABILITY_NAMED_IAM']
-        )
-    except cf.exceptions.ClientError as e:
-        if "No updates" in str(e):
-            print("No Glue stack updates")
-        else:
-            raise
+        record = event["Records"][0]
+        key = record["s3"]["object"]["key"]
 
-    wait_stack(GLUE_STACK)
+        # avoid self-trigger loops
+        if key.startswith("scripts/") or key.startswith("gold/"):
+            print("Ignoring non-raw upload")
+            return {"status": "ignored"}
+    except Exception:
+        print("Non S3 event — ignored")
+        return {"status": "ignored"}
 
-    # ==============================
-    # Run Glue Job
-    # ==============================
-    run = glue.start_job_run(JobName=GLUE_JOB_NAME)
-    wait_glue(GLUE_JOB_NAME, run["JobRunId"])
+    # ============================
+    # Start Glue
+    # ============================
+    job = glue.start_job_run(JobName=GLUE_JOB)
+    run_id = job["JobRunId"]
+    print(f"Started Glue run {run_id}")
 
-    # ==============================
-    # Deploy Crawlers CFT
-    # ==============================
-    try:
-        cf.update_stack(
-            StackName=CRAWLER_STACK,
-            UsePreviousTemplate=True,
-            Capabilities=['CAPABILITY_NAMED_IAM']
-        )
-    except cf.exceptions.ClientError as e:
-        if "No updates" in str(e):
-            print("No crawler updates")
-        else:
-            raise
+    wait_for_glue(GLUE_JOB, run_id)
 
-    wait_stack(CRAWLER_STACK)
-
-    # ==============================
+    # ============================
     # Run Crawlers
-    # ==============================
-    for c in ["airline","customers"]:
-        try:
-            glue.start_crawler(Name=c)
-        except:
-            pass
-        wait_crawler(c)
+    # ============================
+    for c in CRAWLERS:
+        run_crawler(c.strip())
 
-    return {"status": "SUCCESS"}
+    return {
+        "status": "success",
+        "glue_run": run_id
+    }
