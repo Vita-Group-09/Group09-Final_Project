@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Glue Crawlers Stack (Gold Layer — Lambda Triggered)
+Description: Glue Gold Crawlers Stack
 
 Resources:
 
@@ -31,7 +31,7 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
 
 
-# ================= AIRLINE CRAWLER =================
+# ================= AIRLINE =================
 
   AirlineCrawler:
     Type: AWS::Glue::Crawler
@@ -43,7 +43,6 @@ Resources:
       Name: airline
       Role: !GetAtt GlueCrawlerRole.Arn
       DatabaseName: analytics_db
-      TablePrefix: airline_
 
       Targets:
         S3Targets:
@@ -52,20 +51,8 @@ Resources:
       RecrawlPolicy:
         RecrawlBehavior: CRAWL_EVERYTHING
 
-      SchemaChangePolicy:
-        UpdateBehavior: UPDATE_IN_DATABASE
-        DeleteBehavior: DEPRECATE_IN_DATABASE
 
-      Configuration: |
-        {
-          "Version": 1.0,
-          "Grouping": {
-            "TableLevelConfiguration": 3
-          }
-        }
-
-
-# ================= CUSTOMERS CRAWLER =================
+# ================= CUSTOMERS =================
 
   CustomersCrawler:
     Type: AWS::Glue::Crawler
@@ -77,7 +64,6 @@ Resources:
       Name: customers
       Role: !GetAtt GlueCrawlerRole.Arn
       DatabaseName: analytics_db
-      TablePrefix: customers_
 
       Targets:
         S3Targets:
@@ -85,29 +71,3 @@ Resources:
 
       RecrawlPolicy:
         RecrawlBehavior: CRAWL_EVERYTHING
-
-      SchemaChangePolicy:
-        UpdateBehavior: UPDATE_IN_DATABASE
-        DeleteBehavior: DEPRECATE_IN_DATABASE
-
-      Configuration: |
-        {
-          "Version": 1.0,
-          "Grouping": {
-            "TableLevelConfiguration": 3
-          }
-        }
-
-
-# ================= OUTPUTS =================
-
-Outputs:
-
-  DatabaseName:
-    Value: analytics_db
-
-  AirlineCrawlerName:
-    Value: airline
-
-  CustomersCrawlerName:
-    Value: customers
