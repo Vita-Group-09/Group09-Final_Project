@@ -1,15 +1,19 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Lambda trigger → Glue → Crawlers
+Description: Lambda to trigger Glue + Crawlers on Raw S3 upload
 
 Parameters:
+
+  LambdaName:
+    Type: String
+    Default: raw-trigger-lambda
 
   BucketName:
     Type: String
     Default: airport-airline-operations-analytics-platform
 
-  LambdaScriptKey:
+  CodeKey:
     Type: String
-    Default: scripts/lambda.py
+    Default: scripts/lambda.zip
 
   GlueJobName:
     Type: String
@@ -18,13 +22,12 @@ Parameters:
 
 Resources:
 
-# =================================
+# =========================
 # IAM ROLE
-# =================================
+# =========================
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: lambda-glue-trigger-role
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -37,7 +40,7 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
       Policies:
-        - PolicyName: GlueControl
+        - PolicyName: GlueCrawlerAccess
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -50,48 +53,48 @@ Resources:
                 Resource: "*"
 
 
-# =================================
+# =========================
 # LAMBDA
-# =================================
-  GlueTriggerLambda:
+# =========================
+  RawTriggerLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: glue-auto-trigger
+      FunctionName: !Ref LambdaName
       Runtime: python3.9
       Handler: lambda.lambda_handler
       Timeout: 900
       MemorySize: 256
       Role: !GetAtt LambdaRole.Arn
 
-      Code:
-        S3Bucket: !Ref BucketName
-        S3Key: !Ref LambdaScriptKey
-
       Environment:
         Variables:
           GLUE_JOB_NAME: !Ref GlueJobName
-          CRAWLER_NAMES: "airline,customers"
+          CRAWLERS: "airline,customers"
+
+      Code:
+        S3Bucket: !Ref BucketName
+        S3Key: !Ref CodeKey
 
 
-# =================================
-# S3 → Lambda permission
-# =================================
+# =========================
+# Permission for S3
+# =========================
   LambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !Ref GlueTriggerLambda
+      FunctionName: !Ref RawTriggerLambda
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
       SourceArn: !Sub arn:aws:s3:::${BucketName}
 
 
-# =================================
-# S3 EVENT NOTIFICATION
-# =================================
-  BucketNotification:
-    Type: AWS::S3::Bucket
+# =========================
+# S3 EVENT TRIGGER
+# =========================
+  RawUploadTrigger:
+    Type: AWS::S3::BucketNotification
     Properties:
-      BucketName: !Ref BucketName
+      Bucket: !Ref BucketName
       NotificationConfiguration:
         LambdaConfigurations:
           - Event: s3:ObjectCreated:*
@@ -100,9 +103,9 @@ Resources:
                 Rules:
                   - Name: prefix
                     Value: raw/
-            Function: !GetAtt GlueTriggerLambda.Arn
+            Function: !GetAtt RawTriggerLambda.Arn
 
 
 Outputs:
-  LambdaName:
-    Value: !Ref GlueTriggerLambda
+  LambdaArn:
+    Value: !GetAtt RawTriggerLambda.Arn
