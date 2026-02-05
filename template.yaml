@@ -1,8 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Final Glue Job CI/CD Template (Gold Customers + Airline)
+Description: Glue Job Stack (Auto folders + Gold pipeline)
 
 Parameters:
-
   ScriptBucket:
     Type: String
 
@@ -12,19 +11,30 @@ Parameters:
   JobName:
     Type: String
     Default: FinalGlue
-    Description: Glue job name (no spaces)
 
 
 Resources:
 
-# ==============================
-# IAM ROLE (NO FIXED NAME)
-# ==============================
+# ================= S3 AUTO FOLDERS =================
+
+  GlueTempFolder:
+    Type: AWS::S3::Object
+    Properties:
+      Bucket: !Ref ScriptBucket
+      Key: glue-temp/
+
+  SparkLogFolder:
+    Type: AWS::S3::Object
+    Properties:
+      Bucket: !Ref ScriptBucket
+      Key: spark-logs/
+
+
+# ================= IAM ROLE =================
 
   GlueJobRole:
     Type: AWS::IAM::Role
     Properties:
-
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -37,23 +47,17 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
 
-      Path: /
 
-      Tags:
-        - Key: project
-          Value: airline-analytics
-
-
-# ==============================
-# GLUE JOB
-# ==============================
+# ================= GLUE JOB =================
 
   FinalGlueJob:
     Type: AWS::Glue::Job
-    DependsOn: GlueJobRole
+    DependsOn:
+      - GlueJobRole
+      - GlueTempFolder
+      - SparkLogFolder
 
     Properties:
-
       Name: !Ref JobName
       Role: !GetAtt GlueJobRole.Arn
 
@@ -70,29 +74,14 @@ Resources:
         --enable-metrics: "true"
         --enable-spark-ui: "true"
         --spark-event-logs-path: !Sub s3://${ScriptBucket}/spark-logs/
-        --job-bookmark-option: job-bookmark-disable
         --TempDir: !Sub s3://${ScriptBucket}/glue-temp/
-
-      ExecutionProperty:
-        MaxConcurrentRuns: 1
 
       WorkerType: G.1X
       NumberOfWorkers: 10
-
       Timeout: 180
       MaxRetries: 0
 
-      Tags:
-        project: airline-analytics
-        layer: gold
-
-
-# ==============================
-# OUTPUT
-# ==============================
 
 Outputs:
-
   GlueJobName:
-    Description: Name of the Glue job
     Value: !Ref FinalGlueJob
