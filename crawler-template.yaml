@@ -1,10 +1,11 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Glue Gold Crawlers Stack
+Description: Glue Crawlers Stack — Gold Layer
 
 Resources:
 
-# ================= DATABASE =================
-
+# =========================
+# DATABASE
+# =========================
   AnalyticsDB:
     Type: AWS::Glue::Database
     Properties:
@@ -13,8 +14,9 @@ Resources:
         Name: analytics_db
 
 
-# ================= IAM ROLE =================
-
+# =========================
+# CRAWLER ROLE
+# =========================
   GlueCrawlerRole:
     Type: AWS::IAM::Role
     Properties:
@@ -31,43 +33,43 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
 
 
-# ================= AIRLINE =================
-
+# =========================
+# AIRLINE CRAWLER
+# =========================
   AirlineCrawler:
     Type: AWS::Glue::Crawler
-    DependsOn:
-      - AnalyticsDB
-      - GlueCrawlerRole
-
+    DependsOn: AnalyticsDB
     Properties:
       Name: airline
       Role: !GetAtt GlueCrawlerRole.Arn
       DatabaseName: analytics_db
+      TablePrefix: airline_
 
       Targets:
         S3Targets:
           - Path: s3://airport-airline-operations-analytics-platform/gold/airline/
 
-      RecrawlPolicy:
-        RecrawlBehavior: CRAWL_EVERYTHING
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: DEPRECATE_IN_DATABASE
 
 
-# ================= CUSTOMERS =================
-
+# =========================
+# CUSTOMERS CRAWLER
+# =========================
   CustomersCrawler:
     Type: AWS::Glue::Crawler
-    DependsOn:
-      - AnalyticsDB
-      - GlueCrawlerRole
-
+    DependsOn: AnalyticsDB
     Properties:
       Name: customers
       Role: !GetAtt GlueCrawlerRole.Arn
       DatabaseName: analytics_db
+      TablePrefix: customers_
 
       Targets:
         S3Targets:
           - Path: s3://airport-airline-operations-analytics-platform/gold/customers/
 
-      RecrawlPolicy:
-        RecrawlBehavior: CRAWL_EVERYTHING
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: DEPRECATE_IN_DATABASE
