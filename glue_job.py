@@ -9,9 +9,9 @@ from pyspark.sql.functions import (
     to_timestamp, coalesce, lit
 )
 
-# --------------------------------------------------
-# JOB INITIALIZATION
-# --------------------------------------------------
+# ==============================
+# JOB INIT
+# ==============================
 args = getResolvedOptions(sys.argv, ['JOB_NAME'])
 
 sc = SparkContext()
@@ -21,13 +21,13 @@ spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
 
-# --------------------------------------------------
-# READ RAW FLIGHT DATA (CSV FROM S3)
-# --------------------------------------------------
+# ==============================
+# READ RAW DATA
+# ==============================
 raw_df = glueContext.create_dynamic_frame.from_options(
     connection_type="s3",
     connection_options={
-        "paths": ["s3://amzn-s3-finalproject/raw/"],
+        "paths": ["s3://airport-airline-operations-analytics-platform/raw/"],
         "recurse": True
     },
     format="csv",
@@ -38,9 +38,9 @@ raw_df = glueContext.create_dynamic_frame.from_options(
     }
 ).toDF()
 
-# --------------------------------------------------
-# DATE CAST + FLAGS
-# --------------------------------------------------
+# ==============================
+# CLEAN + DERIVED COLUMNS
+# ==============================
 df = (
     raw_df
     .withColumn("FL_DATE", to_timestamp(col("FL_DATE")))
@@ -56,9 +56,9 @@ df = (
     )
 )
 
-# --------------------------------------------------
-# CORE AGGREGATION (BASE TABLE)
-# --------------------------------------------------
+# ==============================
+# BASE AGGREGATION
+# ==============================
 base_agg = (
     df.groupBy("year","month","ORIGIN","DEST","OP_CARRIER")
     .agg(
@@ -70,42 +70,40 @@ base_agg = (
         avg("AIR_TIME").alias("avg_air_time"),
         (avg("on_time_dep") * 100).alias("on_time_dep_pct"),
         (avg("on_time_arr") * 100).alias("on_time_arr_pct"),
-        avg("O_TEMP").alias("avg_o_temp"),
         avg("O_PRCP").alias("avg_o_prcp"),
         avg("O_WSPD").alias("avg_o_wspd"),
-        avg("D_TEMP").alias("avg_d_temp"),
         avg("D_PRCP").alias("avg_d_prcp"),
         avg("D_WSPD").alias("avg_d_wspd")
     )
 )
 
-# --------------------------------------------------
+# ==============================
 # LOOKUP TABLES
-# --------------------------------------------------
+# ==============================
 origin_lkp = spark.read.option("header", True) \
-    .csv("s3://amzn-s3-finalproject/reference/airlines/ORIGIN .csv") \
+    .csv("s3://airport-airline-operations-analytics-platform/reference/ORIGIN .csv") \
     .select(
         col("Code").alias("ORIGIN"),
         col("Airport Name").alias("origin_airport_name")
     )
 
 dest_lkp = spark.read.option("header", True) \
-    .csv("s3://amzn-s3-finalproject/reference/airlines/DEST Airport.csv") \
+    .csv("s3://airport-airline-operations-analytics-platform/reference/DEST Airport.csv") \
     .select(
         col("Code").alias("DEST"),
         col("Airport Name").alias("dest_airport_name")
     )
 
 carrier_lkp = spark.read.option("header", True) \
-    .csv("s3://amzn-s3-finalproject/reference/airlines/OP_Carrier code to full airline name.csv") \
+    .csv("s3://airport-airline-operations-analytics-platform/reference/OP_Carrier code to full airline name.csv") \
     .select(
         col("Code").alias("OP_CARRIER"),
         col("Airline Name").alias("carrier_full_name")
     )
 
-# --------------------------------------------------
+# ==============================
 # CUSTOMERS GOLD (WITH LOOKUPS)
-# --------------------------------------------------
+# ==============================
 customers_gold = (
     base_agg
     .join(origin_lkp, "ORIGIN", "left")
@@ -115,11 +113,11 @@ customers_gold = (
 
 customers_gold.write \
     .mode("overwrite") \
-    .parquet("s3://amzn-s3-finalproject/gold/customers/")
+    .parquet("s3://airport-airline-operations-analytics-platform/gold/customers/")
 
-# --------------------------------------------------
+# ==============================
 # AIRLINE GOLD KPIs
-# --------------------------------------------------
+# ==============================
 airline_gold = (
     customers_gold
 
@@ -164,9 +162,9 @@ airline_gold = (
 
 airline_gold.write \
     .mode("overwrite") \
-    .parquet("s3://amzn-s3-finalproject/gold/airline/")
+    .parquet("s3://airport-airline-operations-analytics-platform/gold/airline/")
 
-# --------------------------------------------------
-# JOB COMMIT
-# --------------------------------------------------
+# ==============================
+# COMMIT
+# ==============================
 job.commit()
