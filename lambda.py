@@ -1,79 +1,47 @@
 import json
 import time
-import boto3
 import os
+import boto3
 
 glue = boto3.client("glue")
 
-GLUE_JOB = os.environ.get("GLUE_JOB_NAME", "FinalGlue")
-CRAWLERS = os.environ.get("CRAWLERS", "airline,customers").split(",")
+GLUE_JOB = os.environ.get("GLUE_JOB", "FinalGlue")
+CRAWLERS = ["airline", "customers"]
 
 
-# ==============================
-# Glue wait helper
-# ==============================
-def wait_for_glue(job_name, run_id):
+def wait_glue(job, run_id):
     while True:
-        r = glue.get_job_run(JobName=job_name, RunId=run_id)
-        state = r["JobRun"]["JobRunState"]
+        r = glue.get_job_run(JobName=job, RunId=run_id)
+        s = r["JobRun"]["JobRunState"]
+        print("Glue state:", s)
 
-        print(f"Glue state: {state}")
-
-        if state == "SUCCEEDED":
+        if s == "SUCCEEDED":
             return
-
-        if state in ["FAILED", "STOPPED", "TIMEOUT"]:
-            raise Exception(f"Glue failed: {state}")
+        if s in ["FAILED", "STOPPED", "TIMEOUT"]:
+            raise Exception(f"Glue failed: {s}")
 
         time.sleep(30)
 
 
-# ==============================
-# Crawler helper
-# ==============================
-def run_crawler(name):
-    try:
-        glue.start_crawler(Name=name)
-        print(f"Crawler started: {name}")
-    except glue.exceptions.CrawlerRunningException:
-        print(f"{name} already running")
-
+def wait_crawler(name):
     while True:
-        c = glue.get_crawler(Name=name)
-        state = c["Crawler"]["State"]
-
-        if state == "READY":
-            status = c["Crawler"]["LastCrawl"]["Status"]
-            print(f"{name} crawl result: {status}")
-
-            if status != "SUCCEEDED":
-                raise Exception(f"{name} crawler failed")
-
+        s = glue.get_crawler(Name=name)["Crawler"]["State"]
+        print(name, s)
+        if s == "READY":
             return
-
         time.sleep(20)
 
 
-# ==============================
-# Lambda handler
-# ==============================
 def lambda_handler(event, context):
+    print("Event:", json.dumps(event))
 
-    print("S3 Trigger received")
-    print(json.dumps(event))
+    run = glue.start_job_run(JobName=GLUE_JOB)
+    rid = run["JobRunId"]
 
-    # ---- Start Glue ----
-    job = glue.start_job_run(JobName=GLUE_JOB)
-    run_id = job["JobRunId"]
-    print("Glue started:", run_id)
+    wait_glue(GLUE_JOB, rid)
 
-    wait_for_glue(GLUE_JOB, run_id)
-
-    # ---- Run Crawlers ----
     for c in CRAWLERS:
-        run_crawler(c.strip())
+        glue.start_crawler(Name=c)
+        wait_crawler(c)
 
-    return {
-        "status": "SUCCESS",
-        "message": "Glue + Crawlers completed"
-    }
+    return {"status": "done"}
