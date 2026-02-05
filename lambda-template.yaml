@@ -1,15 +1,32 @@
-AWSTemplateFormatVersion: '2010-09-09'
-Description: Raw S3 Trigger Lambda
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda trigger → Glue → Crawlers
+
+Parameters:
+
+  BucketName:
+    Type: String
+    Default: airport-airline-operations-analytics-platform
+
+  LambdaScriptKey:
+    Type: String
+    Default: scripts/lambda.py
+
+  GlueJobName:
+    Type: String
+    Default: FinalGlue
+
 
 Resources:
 
-# ================= IAM =================
-
+# =================================
+# IAM ROLE
+# =================================
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: lambda-glue-trigger-role
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
@@ -22,39 +39,70 @@ Resources:
       Policies:
         - PolicyName: GlueControl
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
                   - glue:StartJobRun
                   - glue:GetJobRun
-                  - glue:GetCrawler
                   - glue:StartCrawler
+                  - glue:GetCrawler
                 Resource: "*"
 
 
-# ================= LAMBDA =================
-
-  TriggerLambda:
+# =================================
+# LAMBDA
+# =================================
+  GlueTriggerLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: raw-trigger-lambda
+      FunctionName: glue-auto-trigger
       Runtime: python3.9
-      Handler: lambda_function.lambda_handler
+      Handler: lambda.lambda_handler
       Timeout: 900
       MemorySize: 256
       Role: !GetAtt LambdaRole.Arn
+
       Code:
-        S3Bucket: airport-airline-operations-analytics-platform
-        S3Key: lambda/lambda.zip
+        S3Bucket: !Ref BucketName
+        S3Key: !Ref LambdaScriptKey
+
+      Environment:
+        Variables:
+          GLUE_JOB_NAME: !Ref GlueJobName
+          CRAWLER_NAMES: "airline,customers"
 
 
-# ================= S3 TRIGGER =================
-
+# =================================
+# S3 → Lambda permission
+# =================================
   LambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !Ref TriggerLambda
+      FunctionName: !Ref GlueTriggerLambda
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
-      SourceArn: arn:aws:s3:::airport-airline-operations-analytics-platform
+      SourceArn: !Sub arn:aws:s3:::${BucketName}
+
+
+# =================================
+# S3 EVENT NOTIFICATION
+# =================================
+  BucketNotification:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: raw/
+            Function: !GetAtt GlueTriggerLambda.Arn
+
+
+Outputs:
+  LambdaName:
+    Value: !Ref GlueTriggerLambda
