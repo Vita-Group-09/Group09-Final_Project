@@ -1,16 +1,14 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Glue Job for Gold Customers + Airline
+Description: Glue Job Final
 
 Parameters:
   ScriptBucket:
     Type: String
-
   ScriptKey:
     Type: String
-
   JobName:
     Type: String
-    Default: FinalGlue
+
 
 Resources:
 
@@ -29,14 +27,18 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
 
-  GlueTempBucket:
+
+  GlueTempFolder:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+
 
   FinalGlueJob:
     Type: AWS::Glue::Job
     Properties:
       Name: !Ref JobName
       Role: !GetAtt GlueJobRole.Arn
+
       GlueVersion: "4.0"
 
       Command:
@@ -46,15 +48,9 @@ Resources:
 
       DefaultArguments:
         --job-language: python
-        --enable-continuous-cloudwatch-log: "true"
-        --enable-metrics: "true"
-        --TempDir: !Sub s3://${GlueTempBucket}/temp/
+        --TempDir: !Sub s3://${ScriptBucket}/glue-temp/
 
       WorkerType: G.1X
       NumberOfWorkers: 10
       Timeout: 120
       MaxRetries: 0
-
-Outputs:
-  GlueJobName:
-    Value: !Ref FinalGlueJob
