@@ -1,33 +1,23 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Lambda to trigger Glue + Crawlers on Raw S3 upload
+Description: Lambda that triggers Glue + Crawlers on Raw S3 upload
 
 Parameters:
-
-  LambdaName:
+  CodeBucket:
     Type: String
-    Default: raw-trigger-lambda
-
-  BucketName:
-    Type: String
-    Default: airport-airline-operations-analytics-platform
 
   CodeKey:
     Type: String
-    Default: scripts/lambda.zip
-
-  GlueJobName:
-    Type: String
-    Default: FinalGlue
 
 
 Resources:
 
-# =========================
-# IAM ROLE
-# =========================
+# ======================
+# Lambda Role
+# ======================
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: glue-trigger-lambda-role
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -40,7 +30,7 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
       Policies:
-        - PolicyName: GlueCrawlerAccess
+        - PolicyName: GlueCrawlerPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -48,64 +38,41 @@ Resources:
                 Action:
                   - glue:StartJobRun
                   - glue:GetJobRun
-                  - glue:StartCrawler
                   - glue:GetCrawler
+                  - glue:StartCrawler
                 Resource: "*"
 
 
-# =========================
-# LAMBDA
-# =========================
-  RawTriggerLambda:
+# ======================
+# Lambda Function
+# ======================
+  GlueTriggerLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Ref LambdaName
+      FunctionName: raw-upload-trigger
       Runtime: python3.9
       Handler: lambda.lambda_handler
       Timeout: 900
       MemorySize: 256
       Role: !GetAtt LambdaRole.Arn
 
-      Environment:
-        Variables:
-          GLUE_JOB_NAME: !Ref GlueJobName
-          CRAWLERS: "airline,customers"
-
       Code:
-        S3Bucket: !Ref BucketName
+        S3Bucket: !Ref CodeBucket
         S3Key: !Ref CodeKey
 
 
-# =========================
-# Permission for S3
-# =========================
-  LambdaInvokePermission:
+# ======================
+# Permission for S3 invoke
+# ======================
+  AllowS3Invoke:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !Ref RawTriggerLambda
+      FunctionName: !Ref GlueTriggerLambda
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
-      SourceArn: !Sub arn:aws:s3:::${BucketName}
-
-
-# =========================
-# S3 EVENT TRIGGER
-# =========================
-  RawUploadTrigger:
-    Type: AWS::S3::BucketNotification
-    Properties:
-      Bucket: !Ref BucketName
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: raw/
-            Function: !GetAtt RawTriggerLambda.Arn
+      SourceArn: arn:aws:s3:::airport-airline-operations-analytics-platform
 
 
 Outputs:
   LambdaArn:
-    Value: !GetAtt RawTriggerLambda.Arn
+    Value: !GetAtt GlueTriggerLambda.Arn
