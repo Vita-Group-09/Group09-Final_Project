@@ -1,7 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Glue Job Stack (Auto folders + Gold pipeline)
+Description: Final Glue Job Stack — Gold Customers + Airline
 
 Parameters:
+
   ScriptBucket:
     Type: String
 
@@ -15,23 +16,9 @@ Parameters:
 
 Resources:
 
-# ================= S3 AUTO FOLDERS =================
-
-  GlueTempFolder:
-    Type: AWS::S3::Object
-    Properties:
-      Bucket: !Ref ScriptBucket
-      Key: glue-temp/
-
-  SparkLogFolder:
-    Type: AWS::S3::Object
-    Properties:
-      Bucket: !Ref ScriptBucket
-      Key: spark-logs/
-
-
-# ================= IAM ROLE =================
-
+# =========================
+# GLUE ROLE
+# =========================
   GlueJobRole:
     Type: AWS::IAM::Role
     Properties:
@@ -48,19 +35,14 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
 
 
-# ================= GLUE JOB =================
-
+# =========================
+# GLUE JOB
+# =========================
   FinalGlueJob:
     Type: AWS::Glue::Job
-    DependsOn:
-      - GlueJobRole
-      - GlueTempFolder
-      - SparkLogFolder
-
     Properties:
       Name: !Ref JobName
       Role: !GetAtt GlueJobRole.Arn
-
       GlueVersion: "4.0"
 
       Command:
@@ -72,14 +54,17 @@ Resources:
         --job-language: python
         --enable-continuous-cloudwatch-log: "true"
         --enable-metrics: "true"
-        --enable-spark-ui: "true"
-        --spark-event-logs-path: !Sub s3://${ScriptBucket}/spark-logs/
+        --job-bookmark-option: job-bookmark-disable
         --TempDir: !Sub s3://${ScriptBucket}/glue-temp/
+
+      ExecutionProperty:
+        MaxConcurrentRuns: 1
 
       WorkerType: G.1X
       NumberOfWorkers: 10
+
       Timeout: 180
-      MaxRetries: 0
+      MaxRetries: 1
 
 
 Outputs:
