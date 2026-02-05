@@ -3,10 +3,19 @@ Description: Glue Crawlers Stack (Silver Layer)
 
 Resources:
 
+  # ---------- DATABASE ----------
+  AnalyticsDB:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: analytics_db
+
+
+  # ---------- IAM ROLE (NO FIXED NAME) ----------
   GlueCrawlerRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: glue-crawler-role
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -18,8 +27,11 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
         - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
 
+
+  # ---------- AIRLINE CRAWLER ----------
   AirlineCrawler:
     Type: AWS::Glue::Crawler
+    DependsOn: AnalyticsDB
     Properties:
       Name: airline
       Role: !GetAtt GlueCrawlerRole.Arn
@@ -32,8 +44,11 @@ Resources:
         UpdateBehavior: UPDATE_IN_DATABASE
         DeleteBehavior: DEPRECATE_IN_DATABASE
 
+
+  # ---------- CUSTOMERS CRAWLER ----------
   CustomersCrawler:
     Type: AWS::Glue::Crawler
+    DependsOn: AnalyticsDB
     Properties:
       Name: customers
       Role: !GetAtt GlueCrawlerRole.Arn
