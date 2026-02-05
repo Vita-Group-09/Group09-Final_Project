@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Lambda + S3 Trigger for Glue Pipeline
+Description: Lambda for Glue + Crawler Trigger
 
 Parameters:
   LambdaName:
@@ -12,14 +12,8 @@ Parameters:
   CodeKey:
     Type: String
 
-  DataBucketName:
-    Type: String
-    Default: airport-airline-operations-analytics-platform
-
 
 Resources:
-
-# ---------------- IAM ROLE ----------------
 
   LambdaRole:
     Type: AWS::IAM::Role
@@ -49,14 +43,12 @@ Resources:
                 Resource: "*"
 
 
-# ---------------- LAMBDA ----------------
-
   GlueTriggerLambda:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Ref LambdaName
       Runtime: python3.9
-      Handler: lambda.lambda_handler
+      Handler: lambda.lambda_handler   # ← matches lambda.py
       Timeout: 900
       MemorySize: 256
       Role: !GetAtt LambdaRole.Arn
@@ -66,36 +58,6 @@ Resources:
         S3Key: !Ref CodeKey
 
 
-# ---------------- PERMISSION ----------------
-
-  AllowS3Invoke:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref GlueTriggerLambda
-      Action: lambda:InvokeFunction
-      Principal: s3.amazonaws.com
-      SourceArn: !Sub arn:aws:s3:::${DataBucketName}
-
-
-# ---------------- S3 TRIGGER ----------------
-
-  S3Trigger:
-    Type: AWS::S3::BucketNotification
-    DependsOn: AllowS3Invoke
-    Properties:
-      Bucket: !Ref DataBucketName
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt GlueTriggerLambda.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: raw/
-
-
 Outputs:
-
   LambdaArn:
     Value: !GetAtt GlueTriggerLambda.Arn
