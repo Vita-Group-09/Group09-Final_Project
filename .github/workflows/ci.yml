@@ -1,9 +1,11 @@
-name: CI/CD
+name: Full Data Pipeline CI/CD
 
 on:
   push:
-    branches: ["main"]
-  workflow_dispatch:
+    branches: [ "develop" ]
+
+  workflow_dispatch:   # manual run allowed
+
 
 jobs:
   deploy:
@@ -11,80 +13,108 @@ jobs:
 
     env:
       S3_BUCKET: airport-airline-operations-analytics-platform
+
+      # ---------- Glue ----------
+      GLUE_SCRIPT: glue_job.py
+      GLUE_SCRIPT_KEY: scripts/glue_job.py
+      GLUE_STACK: glue-stack
       GLUE_JOB: FinalGlue
 
-      GLUE_STACK: glue-stack
-      CRAWLER_STACK: crawler-stack
+      # ---------- Lambda ----------
       LAMBDA_STACK: lambda-stack
+      LAMBDA_NAME: glue-trigger-lambda
+      LAMBDA_ZIP: lambda.zip
+      LAMBDA_KEY: lambda/lambda.zip
 
-      GLUE_SCRIPT_KEY: scripts/glue_job.py
-      LAMBDA_KEY: scripts/lambda.zip
+      # ---------- Crawlers ----------
+      CRAWLER_STACK: crawler-stack
+
 
     steps:
 
-# ==============================
+# =========================
 # Checkout
-# ==============================
+# =========================
       - uses: actions/checkout@v4
 
       - name: Show repo files
         run: ls -R
 
-# ==============================
+
+# =========================
 # Python
-# ==============================
+# =========================
       - uses: actions/setup-python@v5
         with:
           python-version: "3.9"
 
-# ==============================
+
+# =========================
 # AWS Login
-# ==============================
+# =========================
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-# ==============================
+
+# =========================
 # Upload Glue Script
-# ==============================
+# =========================
       - name: Upload Glue script
         run: |
-          test -f glue_job.py || exit 1
-          aws s3 cp glue_job.py s3://$S3_BUCKET/$GLUE_SCRIPT_KEY
+          test -f $GLUE_SCRIPT || exit 1
+          aws s3 cp $GLUE_SCRIPT s3://$S3_BUCKET/$GLUE_SCRIPT_KEY
 
-# ==============================
-# Package + Upload Lambda
-# ==============================
+
+# =========================
+# Package Lambda
+# =========================
       - name: Package Lambda
         run: |
           test -f lambda.py || exit 1
-          zip lambda.zip lambda.py
-          aws s3 cp lambda.zip s3://$S3_BUCKET/$LAMBDA_KEY
+          zip $LAMBDA_ZIP lambda.py
+          aws s3 cp $LAMBDA_ZIP s3://$S3_BUCKET/$LAMBDA_KEY
 
-# ==============================
-# Delete bad stacks if stuck
-# ==============================
+
+# =========================
+# Delete bad stacks
+# =========================
       - name: Cleanup failed stacks
         run: |
-          for STACK in $GLUE_STACK $CRAWLER_STACK $LAMBDA_STACK; do
+          for STACK in $GLUE_STACK $LAMBDA_STACK $CRAWLER_STACK; do
             STATUS=$(aws cloudformation describe-stacks \
               --stack-name $STACK \
               --query "Stacks[0].StackStatus" \
               --output text 2>/dev/null || echo "NONE")
 
             if [[ "$STATUS" == "ROLLBACK_COMPLETE" || "$STATUS" == "UPDATE_ROLLBACK_FAILED" ]]; then
-              echo "Deleting $STACK"
               aws cloudformation delete-stack --stack-name $STACK
               aws cloudformation wait stack-delete-complete --stack-name $STACK
             fi
           done
 
-# ==============================
-# Deploy Glue Job Stack
-# ==============================
-      - name: Deploy Glue CFT
+
+# =========================
+# Deploy Lambda CFT
+# =========================
+      - name: Deploy Lambda Stack
+        run: |
+          aws cloudformation deploy \
+            --stack-name $LAMBDA_STACK \
+            --template-file lambda-template.yml \
+            --parameter-overrides \
+              LambdaName=$LAMBDA_NAME \
+              CodeBucket=$S3_BUCKET \
+              CodeKey=$LAMBDA_KEY \
+            --capabilities CAPABILITY_NAMED_IAM
+
+
+# =========================
+# Deploy Glue CFT
+# =========================
+      - name: Deploy Glue Stack
         run: |
           aws cloudformation deploy \
             --stack-name $GLUE_STACK \
@@ -92,37 +122,24 @@ jobs:
             --parameter-overrides \
               ScriptBucket=$S3_BUCKET \
               ScriptKey=$GLUE_SCRIPT_KEY \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --no-fail-on-empty-changeset
+              JobName=$GLUE_JOB \
+            --capabilities CAPABILITY_NAMED_IAM
 
-# ==============================
-# Deploy Crawler Stack
-# ==============================
-      - name: Deploy Crawlers CFT
+
+# =========================
+# Deploy Crawlers CFT
+# =========================
+      - name: Deploy Crawlers Stack
         run: |
           aws cloudformation deploy \
             --stack-name $CRAWLER_STACK \
             --template-file crawler-template.yml \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --no-fail-on-empty-changeset
+            --capabilities CAPABILITY_NAMED_IAM
 
-# ==============================
-# Deploy Lambda Stack
-# ==============================
-      - name: Deploy Lambda CFT
-        run: |
-          aws cloudformation deploy \
-            --stack-name $LAMBDA_STACK \
-            --template-file lambda-template.yml \
-            --parameter-overrides \
-              ScriptBucket=$S3_BUCKET \
-              LambdaKey=$LAMBDA_KEY \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --no-fail-on-empty-changeset
 
-# ==============================
+# =========================
 # Start Glue Job
-# ==============================
+# =========================
       - name: Start Glue Job
         run: |
           RID=$(aws glue start-job-run \
@@ -132,12 +149,13 @@ jobs:
 
           echo "RID=$RID" >> $GITHUB_ENV
 
-# ==============================
-# Wait Glue Job Success
-# ==============================
+
+# =========================
+# Wait Glue Success
+# =========================
       - name: Wait Glue Job
         run: |
-          for i in {1..100}; do
+          for i in {1..80}; do
             S=$(aws glue get-job-run \
               --job-name $GLUE_JOB \
               --run-id $RID \
@@ -152,37 +170,34 @@ jobs:
             sleep 30
           done
 
-          echo "Glue timeout"
           exit 1
 
-# ==============================
-# Run Airline Crawler
-# ==============================
+
+# =========================
+# Run Crawlers
+# =========================
       - name: Run airline crawler
         run: |
           aws glue start-crawler --name airline || true
           while true; do
             S=$(aws glue get-crawler --name airline --query 'Crawler.State' --output text)
-            echo "airline crawler: $S"
             [[ "$S" == "READY" ]] && break
             sleep 20
           done
 
-# ==============================
-# Run Customers Crawler
-# ==============================
+
       - name: Run customers crawler
         run: |
           aws glue start-crawler --name customers || true
           while true; do
             S=$(aws glue get-crawler --name customers --query 'Crawler.State' --output text)
-            echo "customers crawler: $S"
             [[ "$S" == "READY" ]] && break
             sleep 20
           done
 
-# ==============================
+
+# =========================
 # Done
-# ==============================
-      - name: Success
-        run: echo "PIPELINE SUCCESS — Glue + Lambda + Crawlers completed"
+# =========================
+      - name: SUCCESS
+        run: echo "FULL PIPELINE SUCCESS — Lambda + Glue + Crawlers"
