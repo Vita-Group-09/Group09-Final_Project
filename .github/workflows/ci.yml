@@ -16,70 +16,48 @@ jobs:
 
       GLUE_STACK: glue-cicd-stack
       CRAWLER_STACK: glue-crawler-stack
-      LAMBDA_STACK: lambda-stack
 
       GLUE_JOB: FinalGlue
-      LAMBDA_NAME: airline-and-airport
-      LAMBDA_ZIP_KEY: lambda/lambda.zip
 
     steps:
 
-      # ---------------- Checkout ----------------
-      - name: Checkout
-        uses: actions/checkout@v4
+# =============================
+# Checkout
+# =============================
+      - uses: actions/checkout@v4
 
-
-      # ---------------- Debug files ----------------
-      - name: Show repo tree
-        run: ls -R
-
-
-      # ---------------- Python ----------------
-      - name: Setup Python
-        uses: actions/setup-python@v5
+# =============================
+# Python
+# =============================
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.9"
 
-
-      # ---------------- AWS Auth ----------------
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+# =============================
+# AWS Login
+# =============================
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-
-      # =============================
-      # Upload Glue Script to S3
-      # =============================
+# =============================
+# Upload Glue Script
+# =============================
       - name: Upload Glue script
         run: |
-          if [ ! -f "$GLUE_SCRIPT" ]; then
-            echo "glue_job.py not found"
+          if [ ! -f glue_job.py ]; then
+            echo "glue_job.py missing"
             exit 1
           fi
 
-          aws s3 cp $GLUE_SCRIPT s3://$S3_BUCKET/$GLUE_SCRIPT_KEY
+          aws s3 cp glue_job.py s3://$S3_BUCKET/$GLUE_SCRIPT_KEY
 
 
-      # =============================
-      # Package + Upload Lambda
-      # =============================
-      - name: Package Lambda
-        run: |
-          if [ ! -f "lambda.py" ]; then
-            echo "lambda.py not found"
-            exit 1
-          fi
-
-          zip lambda.zip lambda.py
-          aws s3 cp lambda.zip s3://$S3_BUCKET/$LAMBDA_ZIP_KEY
-
-
-      # =============================
-      # Deploy Glue Job Stack
-      # =============================
+# =============================
+# Deploy Glue Job Stack
+# =============================
       - name: Deploy Glue Stack
         run: |
           aws cloudformation deploy \
@@ -93,9 +71,9 @@ jobs:
             --no-fail-on-empty-changeset
 
 
-      # =============================
-      # Deploy Crawler Stack
-      # =============================
+# =============================
+# Deploy Crawler Stack
+# =============================
       - name: Deploy Crawler Stack
         run: |
           aws cloudformation deploy \
@@ -105,25 +83,9 @@ jobs:
             --no-fail-on-empty-changeset
 
 
-      # =============================
-      # Deploy Lambda Stack
-      # =============================
-      - name: Deploy Lambda Stack
-        run: |
-          aws cloudformation deploy \
-            --stack-name $LAMBDA_STACK \
-            --template-file lambda-template.yaml \
-            --parameter-overrides \
-              LambdaName=$LAMBDA_NAME \
-              CodeBucket=$S3_BUCKET \
-              CodeKey=$LAMBDA_ZIP_KEY \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --no-fail-on-empty-changeset
-
-
-      # =============================
-      # Start Glue Job
-      # =============================
+# =============================
+# Start Glue Job
+# =============================
       - name: Start Glue Job
         run: |
           RID=$(aws glue start-job-run \
@@ -135,9 +97,9 @@ jobs:
           echo "Started Glue Job: $RID"
 
 
-      # =============================
-      # Wait for Glue Job
-      # =============================
+# =============================
+# Wait Glue Job
+# =============================
       - name: Wait Glue Job
         run: |
           for i in {1..60}; do
@@ -160,10 +122,10 @@ jobs:
           exit 1
 
 
-      # =============================
-      # Run Airline Crawler
-      # =============================
-      - name: Run Airline Crawler
+# =============================
+# Run Airline Crawler
+# =============================
+      - name: Run airline crawler
         run: |
           aws glue start-crawler --name airline || true
 
@@ -175,10 +137,10 @@ jobs:
           done
 
 
-      # =============================
-      # Run Customers Crawler
-      # =============================
-      - name: Run Customers Crawler
+# =============================
+# Run Customers Crawler
+# =============================
+      - name: Run customers crawler
         run: |
           aws glue start-crawler --name customers || true
 
@@ -190,8 +152,8 @@ jobs:
           done
 
 
-      # =============================
-      # Success
-      # =============================
-      - name: Success
-        run: echo "FULL CI/CD SUCCESS — Glue + Lambda + Crawlers"
+# =============================
+# Success
+# =============================
+      - name: Done
+        run: echo "Glue + Crawlers CI SUCCESS"
