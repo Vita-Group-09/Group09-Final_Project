@@ -39,7 +39,7 @@ Resources:
       TablePrefix: airline_
       Targets:
         S3Targets:
-          - Path: s3://airport-airline-operations-analytics-platform/silver/airline/
+          - Path: s3://airport-airline-operations-analytics-platform/gold/airline_airport_operational_health/
       SchemaChangePolicy:
         UpdateBehavior: UPDATE_IN_DATABASE
         DeleteBehavior: DEPRECATE_IN_DATABASE
