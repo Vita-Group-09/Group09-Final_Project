@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Lambda Trigger → Glue → Crawlers Pipeline
+
+Parameters:
+  LambdaName:
+    Type: String
+    Default: raw-trigger-lambda
+
+Resources:
+
+# ================= IAM ROLE =================
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+        - PolicyName: GlueCFPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+
+              - Effect: Allow
+                Action:
+                  - glue:StartJobRun
+                  - glue:GetJobRun
+                  - glue:GetCrawler
+                  - glue:StartCrawler
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - cloudformation:*
+                Resource: "*"
+
+
+# ================= LAMBDA =================
+
+  TriggerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref LambdaName
+      Runtime: python3.9
+      Handler: lambda_function.lambda_handler
+      Timeout: 900
+      MemorySize: 256
+      Role: !GetAtt LambdaRole.Arn
+      Code:
+        S3Bucket: airport-airline-operations-analytics-platform
+        S3Key: lambda/lambda.zip
+
+
+# ================= S3 TRIGGER =================
+
+  RawBucketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref TriggerLambda
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: arn:aws:s3:::airport-airline-operations-analytics-platform
+
+
+Outputs:
+  LambdaArn:
+    Value: !GetAtt TriggerLambda.Arn
