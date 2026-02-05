@@ -9,10 +9,9 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      S3_BUCKET: airport-airline-operations-analytics-platform
-
-      GLUE_SCRIPT: glue_job.py
-      GLUE_SCRIPT_KEY: scripts/glue_job.py
+      BUCKET: airport-airline-operations-analytics-platform
+      SCRIPT: glue_job.py
+      SCRIPT_KEY: scripts/glue_job.py
 
       GLUE_STACK: glue-cicd-stack
       CRAWLER_STACK: glue-crawler-stack
@@ -21,59 +20,38 @@ jobs:
 
     steps:
 
-# =============================
-# Checkout
-# =============================
       - uses: actions/checkout@v4
 
-# =============================
-# Python
-# =============================
       - uses: actions/setup-python@v5
         with:
           python-version: "3.9"
 
-# =============================
-# AWS Login
-# =============================
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-# =============================
-# Upload Glue Script
-# =============================
+      # ---------------- Upload Glue Script ----------------
       - name: Upload Glue script
         run: |
-          if [ ! -f glue_job.py ]; then
-            echo "glue_job.py missing"
-            exit 1
-          fi
+          test -f $SCRIPT || (echo "glue_job.py missing"; exit 1)
+          aws s3 cp $SCRIPT s3://$BUCKET/$SCRIPT_KEY
 
-          aws s3 cp glue_job.py s3://$S3_BUCKET/$GLUE_SCRIPT_KEY
-
-
-# =============================
-# Deploy Glue Job Stack
-# =============================
+      # ---------------- Deploy Glue Stack ----------------
       - name: Deploy Glue Stack
         run: |
           aws cloudformation deploy \
             --stack-name $GLUE_STACK \
             --template-file template.yaml \
             --parameter-overrides \
-              ScriptBucket=$S3_BUCKET \
-              ScriptKey=$GLUE_SCRIPT_KEY \
+              ScriptBucket=$BUCKET \
+              ScriptKey=$SCRIPT_KEY \
               JobName=$GLUE_JOB \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset
 
-
-# =============================
-# Deploy Crawler Stack
-# =============================
+      # ---------------- Deploy Crawler Stack ----------------
       - name: Deploy Crawler Stack
         run: |
           aws cloudformation deploy \
@@ -82,10 +60,13 @@ jobs:
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset
 
+      # ---------------- Verify Glue Job Exists ----------------
+      - name: Verify Glue Job
+        run: |
+          aws glue get-job --job-name $GLUE_JOB || \
+          (echo "Glue job not found — stack failed"; exit 1)
 
-# =============================
-# Start Glue Job
-# =============================
+      # ---------------- Start Glue Job ----------------
       - name: Start Glue Job
         run: |
           RID=$(aws glue start-job-run \
@@ -94,66 +75,43 @@ jobs:
             --output text)
 
           echo "RID=$RID" >> $GITHUB_ENV
-          echo "Started Glue Job: $RID"
 
-
-# =============================
-# Wait Glue Job
-# =============================
+      # ---------------- Wait Glue Job ----------------
       - name: Wait Glue Job
         run: |
           for i in {1..60}; do
-
-            STATUS=$(aws glue get-job-run \
+            S=$(aws glue get-job-run \
               --job-name $GLUE_JOB \
               --run-id $RID \
               --query JobRun.JobRunState \
               --output text)
 
-            echo "Glue status: $STATUS"
+            echo "Glue status: $S"
 
-            if [ "$STATUS" = "SUCCEEDED" ]; then exit 0; fi
-            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "STOPPED" ]; then exit 1; fi
+            [[ "$S" == "SUCCEEDED" ]] && break
+            [[ "$S" == "FAILED" || "$S" == "STOPPED" ]] && exit 1
 
             sleep 30
           done
 
-          echo "Glue timeout"
-          exit 1
-
-
-# =============================
-# Run Airline Crawler
-# =============================
+      # ---------------- Run Crawlers ----------------
       - name: Run airline crawler
         run: |
           aws glue start-crawler --name airline || true
-
           while true; do
             S=$(aws glue get-crawler --name airline --query 'Crawler.State' --output text)
-            echo "airline crawler: $S"
-            if [ "$S" = "READY" ]; then break; fi
+            [[ "$S" == "READY" ]] && break
             sleep 20
           done
 
-
-# =============================
-# Run Customers Crawler
-# =============================
       - name: Run customers crawler
         run: |
           aws glue start-crawler --name customers || true
-
           while true; do
             S=$(aws glue get-crawler --name customers --query 'Crawler.State' --output text)
-            echo "customers crawler: $S"
-            if [ "$S" = "READY" ]; then break; fi
+            [[ "$S" == "READY" ]] && break
             sleep 20
           done
 
-
-# =============================
-# Success
-# =============================
-      - name: Done
+      - name: Success
         run: echo "Glue + Crawlers CI SUCCESS"
