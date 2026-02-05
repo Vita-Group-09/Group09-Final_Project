@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Lambda for Glue Trigger (SAFE VERSION)
+Description: Lambda → Glue → Crawlers Trigger
 
 Parameters:
   LambdaName:
@@ -14,9 +14,6 @@ Parameters:
 
 Resources:
 
-# =========================
-# IAM ROLE (no fixed name)
-# =========================
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -32,7 +29,7 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
       Policies:
-        - PolicyName: GlueControlPolicy
+        - PolicyName: GlueControl
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -45,15 +42,12 @@ Resources:
                 Resource: "*"
 
 
-# =========================
-# LAMBDA FUNCTION
-# =========================
   GlueTriggerLambda:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Ref LambdaName
       Runtime: python3.9
-      Handler: lambda.lambda_handler   # ← file = lambda.py
+      Handler: lambda.lambda_handler
       Timeout: 900
       MemorySize: 256
       Role: !GetAtt LambdaRole.Arn
