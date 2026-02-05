@@ -1,14 +1,9 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Lambda Trigger → Glue → Crawlers Pipeline
-
-Parameters:
-  LambdaName:
-    Type: String
-    Default: raw-trigger-lambda
+Description: Raw S3 Trigger Lambda
 
 Resources:
 
-# ================= IAM ROLE =================
+# ================= IAM =================
 
   LambdaRole:
     Type: AWS::IAM::Role
@@ -25,11 +20,10 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
       Policies:
-        - PolicyName: GlueCFPolicy
+        - PolicyName: GlueControl
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-
               - Effect: Allow
                 Action:
                   - glue:StartJobRun
@@ -38,18 +32,13 @@ Resources:
                   - glue:StartCrawler
                 Resource: "*"
 
-              - Effect: Allow
-                Action:
-                  - cloudformation:*
-                Resource: "*"
-
 
 # ================= LAMBDA =================
 
   TriggerLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Ref LambdaName
+      FunctionName: raw-trigger-lambda
       Runtime: python3.9
       Handler: lambda_function.lambda_handler
       Timeout: 900
@@ -62,15 +51,10 @@ Resources:
 
 # ================= S3 TRIGGER =================
 
-  RawBucketPermission:
+  LambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref TriggerLambda
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
       SourceArn: arn:aws:s3:::airport-airline-operations-analytics-platform
-
-
-Outputs:
-  LambdaArn:
-    Value: !GetAtt TriggerLambda.Arn
