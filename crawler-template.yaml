@@ -1,16 +1,17 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Gold Crawlers
+Description: Crawlers for Gold Layer
 
 Resources:
 
-  DB:
+  AnalyticsDB:
     Type: AWS::Glue::Database
     Properties:
       CatalogId: !Ref AWS::AccountId
       DatabaseInput:
         Name: analytics_db
 
-  Role:
+
+  CrawlerRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -25,22 +26,36 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
         - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
 
+
   AirlineCrawler:
     Type: AWS::Glue::Crawler
+    DependsOn: AnalyticsDB
     Properties:
       Name: airline
-      Role: !GetAtt Role.Arn
+      Role: !GetAtt CrawlerRole.Arn
       DatabaseName: analytics_db
+
       Targets:
         S3Targets:
           - Path: s3://airport-airline-operations-analytics-platform/gold/airline/
 
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: DEPRECATE_IN_DATABASE
+
+
   CustomersCrawler:
     Type: AWS::Glue::Crawler
+    DependsOn: AnalyticsDB
     Properties:
       Name: customers
-      Role: !GetAtt Role.Arn
+      Role: !GetAtt CrawlerRole.Arn
       DatabaseName: analytics_db
+
       Targets:
         S3Targets:
           - Path: s3://airport-airline-operations-analytics-platform/gold/customers/
+
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: DEPRECATE_IN_DATABASE
