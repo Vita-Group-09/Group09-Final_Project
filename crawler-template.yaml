@@ -6,7 +6,6 @@ Parameters:
     Type: String
 
 Resources:
-
   AnalyticsDB:
     Type: AWS::Glue::Database
     Properties:
