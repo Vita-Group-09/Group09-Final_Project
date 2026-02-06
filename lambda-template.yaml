@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Lambda to trigger Glue Job
+
+Parameters:
+  LambdaName:
+    Type: String
+    Default: raw-trigger-lambda
+
+  CodeBucket:
+    Type: String
+
+  CodeKey:
+    Type: String
+
+Resources:
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+        - PolicyName: GlueRunPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:StartJobRun
+                  - glue:GetJobRun
+                  - glue:GetCrawler
+                  - glue:StartCrawler
+                Resource: "*"
+
+  RawLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref LambdaName
+      Runtime: python3.9
+      Handler: raw_lambda.lambda_handler
+      Timeout: 900
+      MemorySize: 256
+      Role: !GetAtt LambdaRole.Arn
+
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref CodeKey
+
+Outputs:
+  LambdaArn:
+    Value: !GetAtt RawLambda.Arn
