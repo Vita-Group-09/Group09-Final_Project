@@ -2,7 +2,7 @@ name: Glue Full CI/CD
 
 on:
   push:
-    branches: [ "develop" ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -54,11 +54,12 @@ jobs:
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
 # ======================
-# Ensure S3 Bucket Exists
+# Ensure S3 Bucket + Temp Dir
 # ======================
-      - name: Ensure S3 Bucket
+      - name: Ensure S3 Bucket and Glue Temp
         run: |
           aws s3 ls s3://$BUCKET || aws s3 mb s3://$BUCKET
+          aws s3 ls s3://$BUCKET/glue-temp/ || aws s3 cp /dev/null s3://$BUCKET/glue-temp/.keep
 
 # ======================
 # Upload Glue Script
@@ -97,6 +98,7 @@ jobs:
             --parameter-overrides \
               ScriptBucket=$BUCKET \
               ScriptKey=$GLUE_SCRIPT_KEY \
+              TempBucket=$BUCKET \
               JobName=$GLUE_JOB \
             --capabilities CAPABILITY_NAMED_IAM
 
@@ -213,7 +215,7 @@ jobs:
           done
 
 # ======================
-# Success
+# DONE
 # ======================
       - name: DONE
-        run: echo "FULL FLOW SUCCESS — Lambda → Glue → Crawlers"
+        run: echo "🎉 FULL FLOW SUCCESS — Lambda → Glue → Crawlers"
