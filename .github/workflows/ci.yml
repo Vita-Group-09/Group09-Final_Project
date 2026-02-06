@@ -41,24 +41,29 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-      - name: Ensure S3 Bucket Exists
+      # -------- sanity checks (fail fast if missing) --------
+      - name: Verify required S3 objects exist
         run: |
-          aws s3 ls s3://$BUCKET || aws s3 mb s3://$BUCKET
+          aws s3 ls s3://$BUCKET/$GLUE_SCRIPT_KEY
+          aws s3 ls s3://$BUCKET/$RAW_LAMBDA_KEY
+          aws s3 ls s3://$BUCKET/$CRAWLER_LAMBDA_KEY
 
+      # -------- upload artifacts (idempotent) --------
       - name: Upload Glue Script
         run: |
           aws s3 cp $GLUE_SCRIPT s3://$BUCKET/$GLUE_SCRIPT_KEY
 
-      - name: Zip RAW Lambda
+      - name: Zip & Upload RAW Lambda
         run: |
           zip -j raw.zip $RAW_LAMBDA_FILE
           aws s3 cp raw.zip s3://$BUCKET/$RAW_LAMBDA_KEY
 
-      - name: Zip Crawler Lambda
+      - name: Zip & Upload Crawler Lambda
         run: |
           zip -j crawler.zip $CRAWLER_LAMBDA_FILE
           aws s3 cp crawler.zip s3://$BUCKET/$CRAWLER_LAMBDA_KEY
 
+      # -------- deploy stacks --------
       - name: Deploy Glue Stack
         run: |
           aws cloudformation deploy \
@@ -76,11 +81,10 @@ jobs:
           aws cloudformation deploy \
             --stack-name $CRAWLER_STACK \
             --template-file crawler-template.yaml \
-            --parameter-overrides \
-              DataBucket=$BUCKET \
+            --parameter-overrides DataBucket=$BUCKET \
             --capabilities CAPABILITY_NAMED_IAM
 
-      - name: Deploy RAW Lambda
+      - name: Deploy RAW Lambda Stack
         run: |
           aws cloudformation deploy \
             --stack-name $RAW_LAMBDA_STACK \
@@ -91,7 +95,7 @@ jobs:
               CodeKey=$RAW_LAMBDA_KEY \
             --capabilities CAPABILITY_NAMED_IAM
 
-      - name: Deploy Crawler Lambda
+      - name: Deploy Crawler Lambda Stack
         run: |
           aws cloudformation deploy \
             --stack-name $CRAWLER_LAMBDA_STACK \
@@ -102,6 +106,7 @@ jobs:
               CodeKey=$CRAWLER_LAMBDA_KEY \
             --capabilities CAPABILITY_NAMED_IAM
 
+      # -------- invoke & wait --------
       - name: Invoke RAW Lambda
         run: |
           aws lambda invoke --function-name raw-trigger-lambda out.json
@@ -109,15 +114,14 @@ jobs:
 
       - name: Wait for Glue Job
         run: |
-          echo "Waiting for Glue job..."
           for i in {1..80}; do
-            STATUS=$(aws glue get-job-runs \
+            S=$(aws glue get-job-runs \
               --job-name $GLUE_JOB \
               --query 'JobRuns[0].JobRunState' \
               --output text)
-            echo "Glue status: $STATUS"
-            [ "$STATUS" = "SUCCEEDED" ] && exit 0
-            [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "STOPPED" ] && exit 1
+            echo "Glue status: $S"
+            [ "$S" = "SUCCEEDED" ] && exit 0
+            [ "$S" = "FAILED" ] || [ "$S" = "STOPPED" ] && exit 1
             sleep 30
           done
           exit 1
@@ -130,20 +134,20 @@ jobs:
       - name: Wait Airline Crawler
         run: |
           while true; do
-            STATE=$(aws glue get-crawler --name airline --query 'Crawler.State' --output text)
-            echo "Airline: $STATE"
-            [ "$STATE" = "READY" ] && break
+            S=$(aws glue get-crawler --name airline --query 'Crawler.State' --output text)
+            echo "Airline: $S"
+            [ "$S" = "READY" ] && break
             sleep 20
           done
 
       - name: Wait Customers Crawler
         run: |
           while true; do
-            STATE=$(aws glue get-crawler --name customers --query 'Crawler.State' --output text)
-            echo "Customers: $STATE"
-            [ "$STATE" = "READY" ] && break
+            S=$(aws glue get-crawler --name customers --query 'Crawler.State' --output text)
+            echo "Customers: $S"
+            [ "$S" = "READY" ] && break
             sleep 20
           done
 
       - name: DONE
-        run: echo "🎉 FULL FLOW SUCCESS — Lambda → Glue → Crawlers"
+        run: echo "✅ FULL FLOW SUCCESS"
