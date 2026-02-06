@@ -1,4 +1,4 @@
-name: Glue Full CI/CD
+name: Glue CI/CD Full (With Lambda)
 
 on:
   push:
@@ -20,13 +20,9 @@ jobs:
       RAW_LAMBDA_FILE: raw_lambda.py
       RAW_LAMBDA_KEY: lambda/raw_lambda.zip
 
-      CRAWLER_LAMBDA_FILE: crawler_lambda.py
-      CRAWLER_LAMBDA_KEY: lambda/crawler_lambda.zip
-
       GLUE_STACK: glue-stack
       CRAWLER_STACK: crawler-stack
-      RAW_LAMBDA_STACK: raw-lambda-stack
-      CRAWLER_LAMBDA_STACK: crawler-lambda-stack
+      LAMBDA_STACK: lambda-stack
 
       GLUE_JOB: FinalGlue
 
@@ -46,24 +42,32 @@ jobs:
           aws-region: ap-south-1
 
       # --------------------
-      # Sanity checks (fail fast)
+      # Verify S3 Paths
       # --------------------
-      - name: Verify S3 paths exist
+      - name: Verify S3 paths
         run: |
           aws s3 ls s3://$BUCKET/scripts/
           aws s3 ls s3://$BUCKET/scripts/glue_job.py
 
       # --------------------
-      # Upload Glue script
+      # Upload Glue Script
       # --------------------
       - name: Upload Glue Script
         run: |
           aws s3 cp "$GLUE_SCRIPT" "s3://$BUCKET/$GLUE_SCRIPT_KEY"
 
       # --------------------
-      # Deploy Glue Job Stack (10 workers already in CFT)
+      # Package Lambda
       # --------------------
-      - name: Deploy Glue Stack
+      - name: Package Lambda
+        run: |
+          zip -j lambda.zip "$RAW_LAMBDA_FILE"
+          aws s3 cp lambda.zip "s3://$BUCKET/$RAW_LAMBDA_KEY"
+
+      # --------------------
+      # Deploy Glue Job Stack
+      # --------------------
+      - name: Deploy Glue Job Stack
         run: |
           aws cloudformation deploy \
             --stack-name "$GLUE_STACK" \
@@ -72,9 +76,9 @@ jobs:
             --region ap-south-1
 
       # --------------------
-      # Deploy Crawler Stack
+      # Deploy Crawlers Stack
       # --------------------
-      - name: Deploy Crawler Stack
+      - name: Deploy Crawlers Stack
         run: |
           aws cloudformation deploy \
             --stack-name "$CRAWLER_STACK" \
@@ -83,7 +87,33 @@ jobs:
             --region ap-south-1
 
       # --------------------
-      # Wait for Glue Job completion
+      # Deploy Lambda Stack
+      # --------------------
+      - name: Deploy Lambda Stack
+        run: |
+          aws cloudformation deploy \
+            --stack-name "$LAMBDA_STACK" \
+            --template-file lambda-template.yaml \
+            --parameter-overrides \
+              LambdaName=raw-trigger-lambda \
+              CodeBucket=$BUCKET \
+              CodeKey=$RAW_LAMBDA_KEY \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --region ap-south-1
+
+      # --------------------
+      # Invoke Lambda
+      # --------------------
+      - name: Invoke Lambda
+        run: |
+          aws lambda invoke \
+            --function-name raw-trigger-lambda \
+            response.json \
+            --region ap-south-1
+          cat response.json
+
+      # --------------------
+      # Wait for Glue Job
       # --------------------
       - name: Wait for Glue Job
         run: |
@@ -98,59 +128,52 @@ jobs:
             echo "Glue Job Status: $STATUS"
 
             if [ "$STATUS" = "SUCCEEDED" ]; then
-              echo "Glue Job completed successfully"
               exit 0
             fi
 
             if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "STOPPED" ]; then
-              echo "Glue Job failed"
               exit 1
             fi
 
             sleep 30
           done
 
-          echo "Glue Job timed out"
           exit 1
 
       # --------------------
-      # Wait for Airline Crawler
+      # Wait Airline Crawler
       # --------------------
-      - name: Wait for Airline Crawler
+      - name: Wait Airline Crawler
         run: |
-          echo "Waiting for Airline Crawler"
           while true; do
             STATE=$(aws glue get-crawler \
               --name airline \
               --query 'Crawler.State' \
               --output text \
               --region ap-south-1)
-
-            echo "Airline Crawler: $STATE"
+            echo "Airline: $STATE"
             [ "$STATE" = "READY" ] && break
             sleep 20
           done
 
       # --------------------
-      # Wait for Customers Crawler
+      # Wait Customers Crawler
       # --------------------
-      - name: Wait for Customers Crawler
+      - name: Wait Customers Crawler
         run: |
-          echo "Waiting for Customers Crawler"
           while true; do
             STATE=$(aws glue get-crawler \
               --name customers \
               --query 'Crawler.State' \
               --output text \
               --region ap-south-1)
-
-            echo "Customers Crawler: $STATE"
+            echo "Customers: $STATE"
             [ "$STATE" = "READY" ] && break
             sleep 20
           done
 
       # --------------------
-      # Done
+      # DONE
       # --------------------
       - name: DONE
-        run: echo "✅ CI/CD SUCCESS — Glue Job (10 Workers) + Crawlers Completed"
+        run: echo "✅ SUCCESS — Lambda + Glue Job (10 Workers) + Crawlers Completed"
