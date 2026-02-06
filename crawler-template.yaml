@@ -1,10 +1,10 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Glue Crawlers Stack (Stable)
+Description: Glue Crawlers Stack
 
 Parameters:
   DataBucket:
     Type: String
-    Description: Existing S3 bucket with gold data
+    Description: "Existing S3 bucket with gold data"
 
 Resources:
   AnalyticsDB:
