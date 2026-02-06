@@ -2,7 +2,7 @@ name: Glue Full CI/CD
 
 on:
   push:
-    branches: [ "develop" ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      AWS_REGION: ap-south-1
+
       BUCKET: airport-airline-operations-analytics-platform
 
       GLUE_SCRIPT: glue_job.py
@@ -29,126 +31,126 @@ jobs:
       GLUE_JOB: FinalGlue
 
     steps:
+      # --------------------
+      # Checkout
+      # --------------------
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.9"
-
+      # --------------------
+      # AWS Credentials
+      # --------------------
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+          aws-region: ap-south-1
 
-      # ---------- sanity checks ----------
-      - name: Verify required S3 objects exist
+      # --------------------
+      # Sanity checks (fail fast)
+      # --------------------
+      - name: Verify S3 paths exist
         run: |
-          aws s3 ls s3://$BUCKET/$GLUE_SCRIPT_KEY
-          aws s3 ls s3://$BUCKET/$RAW_LAMBDA_KEY
-          aws s3 ls s3://$BUCKET/$CRAWLER_LAMBDA_KEY
+          aws s3 ls s3://$BUCKET/scripts/
+          aws s3 ls s3://$BUCKET/scripts/glue_job.py
 
-      # ---------- upload artifacts ----------
+      # --------------------
+      # Upload Glue script
+      # --------------------
       - name: Upload Glue Script
         run: |
           aws s3 cp "$GLUE_SCRIPT" "s3://$BUCKET/$GLUE_SCRIPT_KEY"
 
-      - name: Zip and Upload RAW Lambda
-        run: |
-          zip -j raw.zip "$RAW_LAMBDA_FILE"
-          aws s3 cp raw.zip "s3://$BUCKET/$RAW_LAMBDA_KEY"
-
-      - name: Zip and Upload Crawler Lambda
-        run: |
-          zip -j crawler.zip "$CRAWLER_LAMBDA_FILE"
-          aws s3 cp crawler.zip "s3://$BUCKET/$CRAWLER_LAMBDA_KEY"
-
-      # ---------- deploy stacks ----------
+      # --------------------
+      # Deploy Glue Job Stack (10 workers already in CFT)
+      # --------------------
       - name: Deploy Glue Stack
         run: |
           aws cloudformation deploy \
             --stack-name "$GLUE_STACK" \
             --template-file glue-template.yaml \
-            --parameter-overrides \
-              ScriptBucket="$BUCKET" \
-              ScriptKey="$GLUE_SCRIPT_KEY" \
-              TempBucket="$BUCKET" \
-              JobName="$GLUE_JOB" \
-            --capabilities CAPABILITY_NAMED_IAM
+            --capabilities CAPABILITY_NAMED_IAM \
+            --region ap-south-1
 
+      # --------------------
+      # Deploy Crawler Stack
+      # --------------------
       - name: Deploy Crawler Stack
         run: |
           aws cloudformation deploy \
             --stack-name "$CRAWLER_STACK" \
             --template-file crawler-template.yaml \
-            --parameter-overrides \
-              DataBucket="$BUCKET" \
-            --capabilities CAPABILITY_NAMED_IAM
+            --capabilities CAPABILITY_NAMED_IAM \
+            --region ap-south-1
 
-      - name: Deploy RAW Lambda Stack
-        run: |
-          aws cloudformation deploy \
-            --stack-name "$RAW_LAMBDA_STACK" \
-            --template-file lambda-template.yaml \
-            --parameter-overrides \
-              LambdaName="raw-trigger-lambda" \
-              CodeBucket="$BUCKET" \
-              CodeKey="$RAW_LAMBDA_KEY" \
-            --capabilities CAPABILITY_NAMED_IAM
-
-      - name: Deploy Crawler Lambda Stack
-        run: |
-          aws cloudformation deploy \
-            --stack-name "$CRAWLER_LAMBDA_STACK" \
-            --template-file lambda-template.yaml \
-            --parameter-overrides \
-              LambdaName="crawler-trigger-lambda" \
-              CodeBucket="$BUCKET" \
-              CodeKey="$CRAWLER_LAMBDA_KEY" \
-            --capabilities CAPABILITY_NAMED_IAM
-
-      # ---------- invoke and wait ----------
-      - name: Invoke RAW Lambda
-        run: |
-          aws lambda invoke --function-name "raw-trigger-lambda" out.json
-          cat out.json
-
+      # --------------------
+      # Wait for Glue Job completion
+      # --------------------
       - name: Wait for Glue Job
         run: |
+          echo "Waiting for Glue Job: $GLUE_JOB"
           for i in {1..80}; do
             STATUS=$(aws glue get-job-runs \
               --job-name "$GLUE_JOB" \
               --query 'JobRuns[0].JobRunState' \
-              --output text)
-            echo "Glue status: $STATUS"
-            [ "$STATUS" = "SUCCEEDED" ] && exit 0
-            [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "STOPPED" ] && exit 1
+              --output text \
+              --region ap-south-1)
+
+            echo "Glue Job Status: $STATUS"
+
+            if [ "$STATUS" = "SUCCEEDED" ]; then
+              echo "Glue Job completed successfully"
+              exit 0
+            fi
+
+            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "STOPPED" ]; then
+              echo "Glue Job failed"
+              exit 1
+            fi
+
             sleep 30
           done
+
+          echo "Glue Job timed out"
           exit 1
 
-      - name: Invoke Crawler Lambda
+      # --------------------
+      # Wait for Airline Crawler
+      # --------------------
+      - name: Wait for Airline Crawler
         run: |
-          aws lambda invoke --function-name "crawler-trigger-lambda" crawl.json
-          cat crawl.json
-
-      - name: Wait Airline Crawler
-        run: |
+          echo "Waiting for Airline Crawler"
           while true; do
-            STATE=$(aws glue get-crawler --name "airline" --query 'Crawler.State' --output text)
-            echo "Airline: $STATE"
+            STATE=$(aws glue get-crawler \
+              --name airline \
+              --query 'Crawler.State' \
+              --output text \
+              --region ap-south-1)
+
+            echo "Airline Crawler: $STATE"
             [ "$STATE" = "READY" ] && break
             sleep 20
           done
 
-      - name: Wait Customers Crawler
+      # --------------------
+      # Wait for Customers Crawler
+      # --------------------
+      - name: Wait for Customers Crawler
         run: |
+          echo "Waiting for Customers Crawler"
           while true; do
-            STATE=$(aws glue get-crawler --name "customers" --query 'Crawler.State' --output text)
-            echo "Customers: $STATE"
+            STATE=$(aws glue get-crawler \
+              --name customers \
+              --query 'Crawler.State' \
+              --output text \
+              --region ap-south-1)
+
+            echo "Customers Crawler: $STATE"
             [ "$STATE" = "READY" ] && break
             sleep 20
           done
 
+      # --------------------
+      # Done
+      # --------------------
       - name: DONE
-        run: echo "✅ FULL FLOW SUCCESS"
+        run: echo "✅ CI/CD SUCCESS — Glue Job (10 Workers) + Crawlers Completed"
