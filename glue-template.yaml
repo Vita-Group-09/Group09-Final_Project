@@ -1,22 +1,18 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Glue Job Stack
+Description: Glue Job Stack - Final (10 Workers)
 
 Parameters:
   ScriptBucket:
     Type: String
-    Description: "Existing S3 bucket where glue script is present"
+    Default: airport-airline-operations-analytics-platform
 
   ScriptKey:
     Type: String
-    Description: "Existing glue script key e.g. scripts/glue_job.py"
+    Default: scripts/glue_job.py
 
   TempBucket:
     Type: String
-    Description: "Existing S3 bucket for Glue TempDir"
-
-  JobName:
-    Type: String
-    Default: FinalGlue
+    Default: airport-airline-operations-analytics-platform
 
 Resources:
   GlueJobRole:
@@ -36,21 +32,24 @@ Resources:
   GlueJob:
     Type: AWS::Glue::Job
     Properties:
-      Name: !Ref JobName
+      Name: FinalGlue
       Role: !GetAtt GlueJobRole.Arn
       GlueVersion: "4.0"
+
       Command:
         Name: glueetl
         PythonVersion: "3"
         ScriptLocation: !Sub s3://${ScriptBucket}/${ScriptKey}
+
       DefaultArguments:
         --job-language: python
         --TempDir: !Sub s3://${TempBucket}/glue-temp/
+
       WorkerType: G.1X
-      NumberOfWorkers: 2
-      Timeout: 60
+      NumberOfWorkers: 10
+      Timeout: 120
       MaxRetries: 0
 
 Outputs:
   GlueJobName:
-    Value: !Ref GlueJob
+    Value: FinalGlue
