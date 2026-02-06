@@ -1,7 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Gold Crawlers Stack
 
-
 Resources:
 
   AnalyticsDB:
@@ -10,7 +9,6 @@ Resources:
       CatalogId: !Ref AWS::AccountId
       DatabaseInput:
         Name: analytics_db
-
 
   CrawlerRole:
     Type: AWS::IAM::Role
@@ -27,9 +25,9 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
         - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
 
-
   AirlineCrawler:
     Type: AWS::Glue::Crawler
+    DependsOn: AnalyticsDB
     Properties:
       Name: airline
       Role: !GetAtt CrawlerRole.Arn
@@ -38,9 +36,9 @@ Resources:
         S3Targets:
           - Path: s3://airport-airline-operations-analytics-platform/gold/airline/
 
-
   CustomersCrawler:
     Type: AWS::Glue::Crawler
+    DependsOn: AnalyticsDB
     Properties:
       Name: customers
       Role: !GetAtt CrawlerRole.Arn
