@@ -1,14 +1,16 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Glue Job Final
+Description: Glue Job Stack
 
 Parameters:
   ScriptBucket:
     Type: String
+
   ScriptKey:
     Type: String
+
   JobName:
     Type: String
-
+    Default: FinalGlue
 
 Resources:
 
@@ -27,18 +29,15 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
 
-
-  GlueTempFolder:
+  GlueTempBucketFolder:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
 
-
-  FinalGlueJob:
+  GlueJob:
     Type: AWS::Glue::Job
     Properties:
       Name: !Ref JobName
       Role: !GetAtt GlueJobRole.Arn
-
       GlueVersion: "4.0"
 
       Command:
@@ -48,9 +47,14 @@ Resources:
 
       DefaultArguments:
         --job-language: python
+        --enable-metrics: "true"
         --TempDir: !Sub s3://${ScriptBucket}/glue-temp/
 
       WorkerType: G.1X
       NumberOfWorkers: 10
       Timeout: 120
       MaxRetries: 0
+
+Outputs:
+  JobName:
+    Value: !Ref GlueJob
