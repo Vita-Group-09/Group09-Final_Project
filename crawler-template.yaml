@@ -1,9 +1,10 @@
-AWSTemplateFormatVersion: "2010-09-09"
-Description: Gold Crawlers Stack
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Glue Crawlers Stack (Stable)
 
 Parameters:
   DataBucket:
     Type: String
+    Description: Existing S3 bucket with gold data
 
 Resources:
   AnalyticsDB:
@@ -17,7 +18,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
