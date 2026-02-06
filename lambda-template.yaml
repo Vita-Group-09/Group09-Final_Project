@@ -4,19 +4,15 @@ Description: Lambda to trigger Glue / Crawlers
 Parameters:
   LambdaName:
     Type: String
-
   CodeBucket:
     Type: String
-
   CodeKey:
     Type: String
 
 Resources:
-
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${LambdaName}-role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -24,10 +20,8 @@ Resources:
             Principal:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
-
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-
       Policies:
         - PolicyName: GlueAccess
           PolicyDocument:
@@ -51,7 +45,6 @@ Resources:
       Timeout: 900
       MemorySize: 256
       Role: !GetAtt LambdaRole.Arn
-
       Code:
         S3Bucket: !Ref CodeBucket
         S3Key: !Ref CodeKey
