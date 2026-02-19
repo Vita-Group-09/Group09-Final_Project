@@ -320,6 +320,7 @@ This project demonstrates:
 - Sequential execution safety
 - Failure-aware orchestration
 - Production-grade AWS serverless data pipeline
-- [Dashboard](https://app.powerbi.com/links/gY80OZnVHO?ctid=ca456806-67ee-4b5f-8305-f1d18a9bc96e&pbi_source=linkShare)
+[Check the Dashboard](https://app.powerbi.com/links/gY80OZnVHO?ctid=ca456806-67ee-4b5f-8305-f1d18a9bc96e&pbi_source=linkShare)
+
 
 
