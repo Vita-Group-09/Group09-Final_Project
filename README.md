@@ -1,5 +1,9 @@
 # 🚀 AWS Serverless ETL CI/CD Pipeline — Lambda + Glue + Crawlers (Event Driven)
 
+📊 **Live Analytics Dashboard:**  
+👉 ([View Power BI Dashboard](https://app.powerbi.com/links/gY80OZnVHO?ctid=ca456806-67ee-4b5f-8305-f1d18a9bc96e&pbi_source=linkShare))
+
+
 ## 📌 Overview
 
 This project implements a fully automated **serverless ETL pipeline with CI/CD** using:
@@ -11,6 +15,7 @@ This project implements a fully automated **serverless ETL pipeline with CI/CD**
 - GitHub Actions (CI/CD)
 - Amazon S3 Data Lake
 - Amazon Athena
+
 
 The pipeline is **event-driven, automated, failure-aware, and production-style**. Everything is deployed via CI/CD — no manual AWS Console setup required.
 
@@ -320,7 +325,8 @@ This project demonstrates:
 - Sequential execution safety
 - Failure-aware orchestration
 - Production-grade AWS serverless data pipeline
-[Check the Dashboard](https://app.powerbi.com/links/gY80OZnVHO?ctid=ca456806-67ee-4b5f-8305-f1d18a9bc96e&pbi_source=linkShare)
+
+
 
 
 
